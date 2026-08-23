@@ -1,0 +1,13 @@
+.gradle/
+.gradle-home/
+build/
+app/build/
+local.properties
+app/debug.keystore
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+.probe/
+.shots/
