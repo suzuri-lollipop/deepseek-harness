@@ -10,7 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  IconPaperclipOutline16, IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -137,6 +137,7 @@ export function InputBar({
   }, [notice, showToast])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
   const safari = useMemo(() => isSafariBrowser(navigator), [])
@@ -536,6 +537,16 @@ export function InputBar({
 
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
 
+  // The file picker is paste/drag's third intake entry: a selection rides the
+  // same intake pre-check as one batch. The value resets before intake so
+  // re-selecting the same file re-fires change; a cancelled dialog leaves no
+  // files and no intake.
+  const onPickImages = (e: ChangeEvent<HTMLInputElement>): void => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length > 0) intakeImages(files)
+  }
+
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
     // Any caret/selection gesture ends a live paste attempt (the machine
     // cannot observe DOM selection). Cheap no-op when none is live.
@@ -787,6 +798,30 @@ export function InputBar({
               {accessSelect}
               {renderSlot('conversation.input.plan', { locked })}
             </div>
+            {/* Attach: the file-picker entry beside paste and drop. Disabled
+                rides the drop gate so all three entries answer the same. */}
+            <Tooltip label={t('image.attach')} side="top" delayMs={500}>
+              <button
+                type="button"
+                className={css.add}
+                aria-label={t('image.attach')}
+                disabled={!canAcceptDrop}
+                onMouseDown={keepFocus}
+                onClick={() => { fileInputRef.current?.click() }}
+              >
+                <IconPaperclipOutline16 size={14} />
+              </button>
+            </Tooltip>
+            <input
+              ref={fileInputRef}
+              className={css.fileInput}
+              type="file"
+              multiple
+              accept={imageLimits?.mediaTypes.join(',')}
+              aria-hidden
+              tabIndex={-1}
+              onChange={onPickImages}
+            />
             {leftItems}
           </div>
           <div className={css.trailing}>

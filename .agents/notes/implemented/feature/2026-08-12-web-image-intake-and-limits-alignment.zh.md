@@ -18,7 +18,7 @@ issue #2248 的第二步对齐，接在[附件展示 note](2026-08-11-web-attach
 
 **上限对齐并投影。** 输入默认值是每条消息 20 张、每个源文件 32 MiB、源文件总量 100 MiB、每张图片一亿解码像素，以及源文件任一边 16384px。附件后端另行生成长边 2048px、独立安全上限 4 MiB 的持久主版本。模型请求使用各路由自己的像素和编码字节预算，因此源文件准入不采用提供方请求限制。HTTP 载体统一使用 `DEFAULT_MAX_REQUEST_BODY_BYTES = 160 MiB`，满足 100 MiB 总量经过 base64 和请求封装扩张后的加载时容量断言。512 MiB 总量无法通过当前传输，因为 base64 进入 JSON 后会需要一个接近 V8 字符串大小上限的 JSON 字符串。输入上限通过 `imageLimits` 会话投影到达客户端。它是每次启动恒定的单元，由 **apiproxy** 而非 attachment Service Definition 注册。`dsh-llm` 依赖 `dsh-attachment`，而 `dsh-session-projection` 经 `dsh-session` 到达 `dsh-llm`；在 seam 包注册投影会形成 project-reference 环。每条消息的数量和总量规则也由 proxy 强制执行。`SessionProjectionMap` 合并继续放在 proxy 的 sessions 协议文件中，客户端已经通过载体类型再导出使用它。
 
-**加入预检与错误文案。** 两种加入手势汇合到 InputBar 的一个 `intakeImages` 包装：在 `addImages` 之前按投影检查数量、单图字节与总字节，违规的一批整体拒收（DeepSeek Chat 语义）并立刻弹出点名上限的横幅——不再有提交时的回滚戏码。宿主检查保留，兜底绕过 composer 的调用方。横幅文案遵循用户定下的一条原则：用户能解决的原因（模型不支持视觉、数量、大小、分辨率、格式——格式改为正面列出支持列表而不是回显被拒的 MIME 类型）用点明出路的产品句子；用户无法解决的原因（base64 损坏、引用丢失、读取失败）折叠为一条保留原因码的发送失败句子，因为产品当前面向开发者，可上报的码好过死胡同。非附件错误码保留原文加错误码的展示。
+**加入预检与错误文案。** 三种加入手势（粘贴、拖放、文件选择，见[附加选择器 note](2026-08-23-composer-image-file-picker.zh.md)）汇合到 InputBar 的一个 `intakeImages` 包装：在 `addImages` 之前按投影检查数量、单图字节与总字节，违规的一批整体拒收（DeepSeek Chat 语义）并立刻弹出点名上限的横幅——不再有提交时的回滚戏码。宿主检查保留，兜底绕过 composer 的调用方。横幅文案遵循用户定下的一条原则：用户能解决的原因（模型不支持视觉、数量、大小、分辨率、格式——格式改为正面列出支持列表而不是回显被拒的 MIME 类型）用点明出路的产品句子；用户无法解决的原因（base64 损坏、引用丢失、读取失败）折叠为一条保留原因码的发送失败句子，因为产品当前面向开发者，可上报的码好过死胡同。非附件错误码保留原文加错误码的展示。
 
 ## 备选方案
 
@@ -26,7 +26,7 @@ issue #2248 的第二步对齐，接在[附件展示 note](2026-08-11-web-attach
 
 **灯箱用 `--dsw-alias-bg-mask-photo`（0.88 黑、主题恒定、无人使用）。** 设计系统的照片查看器 token，也可能是 dsweb 灯箱实际的蒙层；用户选择与 settings 对话框遮罩一致（`bg-mask-1` 加模糊）——两者都能修复 dark 反转。
 
-**在 `apply.ts` 的 `addImages` inject 里预检。** seam 纯度上的位置，因管线成本否决：投影仓没有暴露给 inject 工厂的非 React 面，而 InputBar 已经以惯用方式消费投影，且是两种手势的唯一调用方。
+**在 `apply.ts` 的 `addImages` inject 里预检。** seam 纯度上的位置，因管线成本否决：投影仓没有暴露给 inject 工厂的非 React 面，而 InputBar 已经以惯用方式消费投影，且是三种手势的唯一调用方。
 
 **用 `host.describe` 字段代替投影。** 与会话无关且更便宜，但要经注入 prop 链而非 `useProjection` 送达，而投影的键缺席语义（"未组合 attachment 服务 → 不预检"）是白拿的。
 
