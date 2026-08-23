@@ -352,6 +352,53 @@ describe('image draft rail', () => {
     expect(attachmentOwner(result.slotCalls).canAcceptDrop).toBe(false)
   })
 
+  it('routes a file-picker selection through the intake pre-check and resets the picker', () => {
+    const addImages = vi.fn(() => null)
+    const result = bench({
+      addImages,
+      imageLimits: {
+        maxImageBytes: 5 * 1024 * 1024,
+        maxImagesPerMessage: 20,
+        maxMessageImageBytes: 100 * 1024 * 1024,
+        maxImagePixels: 40_000_000,
+        maxImageDimension: 2000,
+        mediaTypes: ['image/png', 'image/jpeg'] as const,
+      },
+    })
+    const picker = result.view.container.querySelector<HTMLInputElement>('input[type="file"]')!
+    // The picker mirrors the deployment's media types so the OS dialog filters
+    // to them; multiple because one selection is one intake batch.
+    expect(picker.getAttribute('accept')).toBe('image/png,image/jpeg')
+    expect(picker.multiple).toBe(true)
+    const attach = result.view.getByRole('button', { name: '添加图片' }) as HTMLButtonElement
+    expect(attach.disabled).toBe(false)
+    const open = vi.spyOn(picker, 'click')
+    fireEvent.click(attach)
+    expect(open).toHaveBeenCalledTimes(1)
+    const file = new File([Uint8Array.of(1, 2, 3)], 'pick.png', { type: 'image/png' })
+    Object.defineProperty(picker, 'files', { value: [file], configurable: true })
+    fireEvent.change(picker)
+    expect(addImages).toHaveBeenCalledWith([file])
+    // A cancelled dialog leaves no files: nothing reaches intake.
+    Object.defineProperty(picker, 'files', { value: [], configurable: true })
+    fireEvent.change(picker)
+    expect(addImages).toHaveBeenCalledTimes(1)
+    cleanup()
+    // No attachment service (no projected limits): the picker stays and offers
+    // no media-type filter — intake defers to the host's authority.
+    const bare = bench({ addImages: vi.fn(() => null) })
+    const barePicker = bare.view.container.querySelector<HTMLInputElement>('input[type="file"]')!
+    expect(barePicker.hasAttribute('accept')).toBe(false)
+  })
+
+  it('disables the attach button on the drop gate: locked composers and no machine', () => {
+    const locked = bench({ addImages: vi.fn(() => null), inert: true })
+    expect((locked.view.getByRole('button', { name: '添加图片' }) as HTMLButtonElement).disabled).toBe(true)
+    cleanup()
+    const removed = bench({ addImages: vi.fn(() => null), disabled: true })
+    expect((removed.view.getByRole('button', { name: '添加图片' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('sends an image-only draft and exposes removal through the attachment slot', async () => {
     const file = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
     const extra = new File([Uint8Array.of(2)], 'extra.png', { type: 'image/png' })

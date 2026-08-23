@@ -32,6 +32,37 @@ async function openFixtureSession(): Promise<void> {
   }, { timeout: 10_000 })
 }
 
+it('attaches images through the composer file picker into the ordered pending rail', async () => {
+  mountAssembledApp()
+  await openFixtureSession()
+
+  // The picker mirrors the fixture's imageLimits media types so the OS dialog
+  // filters to them; one selection is one intake batch.
+  const picker = document.querySelector<HTMLInputElement>('input[type="file"]')
+  if (picker === null) throw new Error('composer file picker missing')
+  expect(picker.getAttribute('accept')).toBe('image/png,image/jpeg,image/webp,image/gif')
+  expect(picker.multiple).toBe(true)
+  // The button is queried via DOM: jsdom's a11y-visibility computation hides
+  // the composer subtree in this lane, so role queries never reach it.
+  const attach = document.querySelector<HTMLButtonElement>('button[aria-label="Attach image"]')
+  if (attach === null) throw new Error('composer attach button missing')
+  expect(attach.disabled).toBe(false)
+
+  // A selection rides the same intake as paste and drop: the batch enters the
+  // machine and the rail renders it in draft order.
+  const fileA = new File([Uint8Array.of(137, 80, 78, 71)], 'picked-a.png', { type: 'image/png' })
+  const fileB = new File([Uint8Array.of(137, 80, 78, 71)], 'picked-b.jpg', { type: 'image/jpeg' })
+  Object.defineProperty(picker, 'files', { value: [fileA, fileB], configurable: true })
+  fireEvent.change(picker)
+
+  const rail = await waitFor(() => {
+    const el = document.querySelector('[role="group"][aria-label="Pending images"]')
+    if (el === null) throw new Error('attachment rail missing')
+    return el
+  }, { timeout: 5_000 })
+  expect([...rail.querySelectorAll('img')].map(img => img.getAttribute('alt'))).toEqual(['picked-a.png', 'picked-b.jpg'])
+})
+
 it('renders the history image pair through the authorized attachment route and opens the lightbox', async () => {
   mountAssembledApp()
   await openFixtureSession()

@@ -336,6 +336,12 @@
   cursor: default;
 }
 
+/* The hidden picker behind the attach button: out of layout and tab order,
+   opened only by the button's programmatic click. */
+.fileInput {
+  display: none;
+}
+
 /* Plan / Read-only / model — native <select>, chip-like closed chrome
    (figma ToggleButton: 13/20 medium secondary, 12px chevron). */
 .select {
