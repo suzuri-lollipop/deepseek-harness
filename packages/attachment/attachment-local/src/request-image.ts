@@ -78,6 +78,9 @@ function checkedInteger(value: number, name: string): number {
 function validatePolicy(policy: ImageRequestPolicy): void {
   checkedInteger(policy.maxPixels, 'Image request maxPixels')
   checkedInteger(policy.maxBytes, 'Image request maxBytes')
+  if (policy.mediaTypes !== undefined && policy.mediaTypes.length === 0) {
+    throw new AttachmentError('Image request mediaTypes must name at least one media type.', 'INVALID_ATTACHMENT_REF')
+  }
 }
 
 function descriptor(attachment: ImageAttachmentRef, policy: ImageRequestPolicy): string {
@@ -86,6 +89,7 @@ function descriptor(attachment: ImageAttachmentRef, policy: ImageRequestPolicy):
     attachmentId: attachment.attachmentId,
     routePixelBudget: policy.maxPixels,
     encodedByteBudget: policy.maxBytes,
+    ...policy.mediaTypes === undefined ? {} : { allowedMediaTypes: [...policy.mediaTypes] },
     encoding: {
       png: { compressionLevel: 9, palette: 'opaque-only' },
       webpQualities: REQUEST_IMAGE_QUALITIES,
@@ -133,21 +137,61 @@ async function encoded(
   return { data: new Uint8Array(data), mediaType, width: info.width, height: info.height }
 }
 
+/** One candidate's encoder settings within an ordered candidate list. */
+interface CandidateSpec {
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+  quality?: number
+  palette?: boolean
+}
+
+/**
+ * Ordered candidate specs for one image class. The classic list is the
+ * unrestricted policy's exact behaviour; the restricted list extends it with
+ * fallback encoders so a declared media-type restriction keeps every image
+ * class encodable except a genuinely impossible one (alpha into JPEG only).
+ * @param hasAlpha - whether the source raster carries alpha.
+ * @param lowColour - whether the bounded pixel sample stays within the low-colour threshold.
+ * @param restricted - whether the policy declares allowed request media types.
+ * @returns encoder candidates in preference order.
+ */
+function candidateSpecs(
+  hasAlpha: boolean,
+  lowColour: boolean,
+  restricted: boolean,
+): readonly CandidateSpec[] {
+  const webp: readonly CandidateSpec[] = REQUEST_IMAGE_QUALITIES.map(quality => ({
+    mediaType: 'image/webp',
+    quality,
+  }))
+  const jpeg: readonly CandidateSpec[] = REQUEST_IMAGE_QUALITIES.map(quality => ({
+    mediaType: 'image/jpeg',
+    quality,
+  }))
+  const png: CandidateSpec = { mediaType: 'image/png', palette: !hasAlpha }
+  if (lowColour) return restricted ? [png, ...webp, ...jpeg] : [png, ...webp]
+  if (hasAlpha) return restricted ? [...webp, { mediaType: 'image/png', palette: false }] : webp
+  return restricted ? [...jpeg, { mediaType: 'image/png', palette: true }] : jpeg
+}
+
 function encodingAttempts(
   attachment: StoredImageAttachment,
   width: number,
   height: number,
   hasAlpha: boolean,
   lowColour: boolean,
+  mediaTypes: readonly ImageMediaType[] | undefined,
 ): Array<() => Promise<EncodedRequestImage>> {
   const prepared = pipeline(attachment, width, height)
-  const webp = REQUEST_IMAGE_QUALITIES.map(quality => (
-    () => encoded(prepared.clone(), 'image/webp', quality)
-  ))
-  if (lowColour) return [() => encoded(prepared.clone(), 'image/png', undefined, !hasAlpha), ...webp]
-  if (hasAlpha) return webp
-  return REQUEST_IMAGE_QUALITIES.map(quality => (
-    () => encoded(prepared.clone(), 'image/jpeg', quality)
+  const specs = candidateSpecs(hasAlpha, lowColour, mediaTypes !== undefined)
+    .filter(spec => mediaTypes === undefined || mediaTypes.includes(spec.mediaType))
+  if (specs.length === 0) {
+    throw new AttachmentError(
+      `The image cannot be encoded into one of the route's allowed request media types (${mediaTypes?.join(', ')}).`,
+      'UNSUPPORTED_IMAGE_TYPE',
+    )
+  }
+  return specs.map(spec => (
+    () => encoded(prepared.clone(), spec.mediaType, spec.quality, spec.palette)
   ))
 }
 
@@ -157,9 +201,12 @@ async function createRequestImage(
   hasAlpha: boolean,
 ): Promise<EncodedRequestImage> {
   let dimensions = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
+  const mediaTypeAllowed = policy.mediaTypes === undefined
+    || policy.mediaTypes.includes(attachment.ref.mediaType)
   if (dimensions.width === attachment.ref.width
     && dimensions.height === attachment.ref.height
-    && attachment.data.byteLength <= policy.maxBytes) {
+    && attachment.data.byteLength <= policy.maxBytes
+    && mediaTypeAllowed) {
     return {
       data: attachment.data,
       mediaType: attachment.ref.mediaType,
@@ -170,7 +217,7 @@ async function createRequestImage(
   const lowColour = await hasLowColourCount(sourcePipeline(attachment))
   for (;;) {
     const encodedVersion = await encodeFirstWithinLimit(
-      encodingAttempts(attachment, dimensions.width, dimensions.height, hasAlpha, lowColour),
+      encodingAttempts(attachment, dimensions.width, dimensions.height, hasAlpha, lowColour, policy.mediaTypes),
       policy.maxBytes,
     )
     if (!isExhaustedEncoding(encodedVersion)) return encodedVersion
@@ -201,7 +248,8 @@ async function readCached(
     const maximum = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
     if (data.byteLength > policy.maxBytes || detected.depth !== 'uchar' || detected.space !== 'srgb'
       || detected.width > maximum.width || detected.height > maximum.height
-      || !encodedAlphaIsCompatible(expectedAlpha, detected)) return undefined
+      || !encodedAlphaIsCompatible(expectedAlpha, detected)
+      || (policy.mediaTypes !== undefined && !policy.mediaTypes.includes(detected.mediaType))) return undefined
     return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height, hasAlpha: detected.hasAlpha }
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
@@ -238,7 +286,10 @@ async function writeCached(path: string, data: Uint8Array): Promise<void> {
 }
 
 /**
- * Generate or reuse one request image below the local attachment root.
+ * Generate or reuse one request image below the local attachment root. A
+ * policy declaring allowed media types re-encodes a stored attachment the
+ * declaration does not name into an allowed type instead of passing it
+ * through.
  * @param root - absolute versioned attachment storage root.
  * @param attachment - verified normalized attachment bytes and reference.
  * @param policy - exact route request-image policy.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertServiceable, Config } from '../src/config.ts'
+import { assertServiceable, Config, resolveProfiles } from '../src/config.ts'
 
 /** Validate one hand-declared route, with the caller's fields layered onto it. */
 const routeWith = (profile: Record<string, unknown>): (() => unknown) =>
@@ -62,6 +62,36 @@ describe('modality schema boundary', () => {
     const absent = configWith({})() as Materialized
     expect(absent.providers['acme-gateway']?.models?.[0]?.input).toEqual([])
     expect(absent.providers['acme-gateway']?.defaultInput).toEqual(['text'])
+  })
+})
+
+describe('request image media types', () => {
+  const programmaticWith = (profile: Record<string, unknown>): Config => ({
+    providers: {
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [{ id: 'm' }],
+        ...profile,
+      },
+    },
+  })
+
+  it('rejects a media type outside the attachment vocabulary at write', () => {
+    expect(routeWith({ requestImageMediaTypes: ['image/tiff'] })).toThrow(/expected/)
+  })
+
+  it('leaves an absent or empty declaration unrestricted and detaches a present list', () => {
+    const absent = resolveProfiles(programmaticWith({}).providers).get('acme-gateway')
+    expect(absent?.requestImageMediaTypes).toBeUndefined()
+    const empty = resolveProfiles(programmaticWith({ requestImageMediaTypes: [] }).providers).get('acme-gateway')
+    expect(empty?.requestImageMediaTypes).toBeUndefined()
+
+    const declared = ['image/png', 'image/jpeg']
+    const resolved = resolveProfiles(programmaticWith({ requestImageMediaTypes: declared }).providers).get('acme-gateway')
+    expect(resolved?.requestImageMediaTypes).toEqual(declared)
+    declared.push('image/webp')
+    expect(resolved?.requestImageMediaTypes).toEqual(['image/png', 'image/jpeg'])
   })
 })
 
