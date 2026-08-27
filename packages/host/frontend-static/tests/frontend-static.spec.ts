@@ -37,6 +37,9 @@ async function loadComposition(): Promise<Context> {
   await writeFile(join(dist, 'app.js'), 'export {}')
   await writeFile(join(dist, 'blob.bin'), 'BLOB')
   await writeFile(join(dist, 'manifest.webmanifest'), '{}')
+  // Android package fixture: the ZIP local-file-header magic is enough for the
+  // MIME assertion; the server never parses the payload.
+  await writeFile(join(dist, 'dsh-android.apk'), Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x01]))
   await mkdir(join(dist, 'empty'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
@@ -105,6 +108,13 @@ describe('real Loader composition', () => {
       status: 200,
       type: 'text/javascript; charset=utf-8',
       body: '',
+    })
+    // The Android APK ships beside the dist with the package MIME type so
+    // mobile browsers start a download instead of treating it as generic data
+    // (the payload is binary, so only status and type are asserted).
+    expect(await request(port, '/dsh-android.apk')).toMatchObject({
+      status: 200,
+      type: 'application/vnd.android.package-archive',
     })
     await writeFile(join(root!, 'dist', 'app.js'), 'export const rebuilt = true')
     expect(await request(port, '/app.js')).toMatchObject({ status: 200, body: 'export const rebuilt = true' })

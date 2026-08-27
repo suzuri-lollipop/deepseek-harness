@@ -44,6 +44,9 @@ const MIME: Record<string, string> = {
   '.json': 'application/json',
   '.map': 'application/json',
   '.webmanifest': 'application/manifest+json',
+  // Android package files the web app can ship next to the dist (the Android
+  // client APK at /dsh-android.apk): the type drives the browser download.
+  '.apk': 'application/vnd.android.package-archive',
 }
 
 const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([

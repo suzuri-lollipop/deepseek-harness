@@ -2,10 +2,11 @@
  * Global theme DOM applier: projects the resolved ThemeSnapshot onto the
  * document — `html { color-scheme }` for native UA chrome (scrollbars, form
  * controls), `body[data-ds-dark-theme]` for the token palette, the active
- * theme's alias-token overrides as inline CSS variables on body, and one
- * presenter-owned `meta[name="theme-color"]` for surrounding browser UI. Pure
- * DOM writes, no React involvement; the presenter only ever retracts what it
- * wrote itself, so foreign attributes, metadata, and inline styles survive.
+ * theme's alias-token overrides as inline CSS variables on body, and the
+ * document's single `meta[name="theme-color"]` for surrounding browser UI.
+ * Pure DOM writes, no React involvement; the presenter only ever retracts
+ * what it wrote itself, so foreign attributes, metadata, and inline styles
+ * survive.
  */
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 
@@ -16,13 +17,24 @@ export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
 export class ThemePresenter {
   /** Token names this presenter wrote in the last apply (its retraction set). */
   private appliedTokens: string[] = []
-  /** The single metadata node this presenter inserts and removes. */
+  /**
+   * The single metadata node: the boot-time node the ui-theme bootstrap
+   * installed before first paint (Android standalone PWAs fix the navigation
+   * bar color at the initial page commit and never see a later-minted
+   * second node), or a node this presenter mints when no such node exists.
+   */
   private readonly themeColorMeta: HTMLMetaElement
 
-  /** Create the presenter-owned metadata node before the first snapshot arrives. */
+  /** Adopt the boot-time metadata node, minting one when absent, before the first snapshot arrives. */
   constructor() {
-    this.themeColorMeta = document.createElement('meta')
-    this.themeColorMeta.name = 'theme-color'
+    const existing = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    if (existing !== null) {
+      this.themeColorMeta = existing
+      return
+    }
+    const minted = document.createElement('meta')
+    minted.name = 'theme-color'
+    this.themeColorMeta = minted
   }
 
   /**

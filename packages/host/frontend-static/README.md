@@ -16,5 +16,5 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **The starter MIME table is minimal** — it covers the Vite-emitted asset set plus the shipped PWA manifest; other extensions fall back to `application/octet-stream` until an asset class actually ships.
+- **The starter MIME table is minimal** — it covers the Vite-emitted asset set, the shipped PWA manifest, and the Android package file the `dsh web` host can ship beside the dist (the Android client APK at `/dsh-android.apk`); other extensions fall back to `application/octet-stream` until an asset class actually ships.
 - **Pathname routing is explicit** — the current client enters through the root or configured index path and has no History API pathname routes. Adding one requires an explicit server rule and real-composition coverage rather than a broad fallback for every miss.

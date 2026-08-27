@@ -23,4 +23,15 @@ describe('web shell base.css', () => {
     expect(imports).toEqual([])
     expect(baseCss).not.toContain(THEME_PACKAGE)
   })
+
+  it('insets the mount with safe-area insets for phone OS chrome', () => {
+    // The shared html/body/#root sizing rule also opens with a `#root {` line;
+    // anchor on the dedicated rule's box-sizing so it never matches that one.
+    const dedicated = /#root\s*{\s*box-sizing: border-box;([^}]*)}/.exec(baseCss)
+    expect(dedicated).not.toBeNull()
+    const rule = dedicated?.[1] ?? ''
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(rule).toContain(`env(safe-area-inset-${side})`)
+    }
+  })
 })

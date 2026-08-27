@@ -10,6 +10,7 @@ import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-general/clien
 import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
+import { AndroidDownloadRow } from '../src/client/AndroidDownloadRow.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
@@ -94,7 +95,12 @@ describe('ui-settings-general apply', () => {
     // The nav label is a locale-following thunk; owners resolve at read time.
     expect(resolveSlotLabel(entry.options.label)).toBe('通用设置')
     expect(before.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
-    expect(before.slots.entries('settings.general.item')).toEqual([])
+    // The shell owns one item itself: the Android client download row.
+    const items = before.slots.entries('settings.general.item')
+    expect(items).toHaveLength(1)
+    expect(items[0]!.component).toBe(AndroidDownloadRow)
+    expect(items[0]!.options).toMatchObject({ id: 'android', order: 30 })
+    expect(items[0]!.locale).toBe('settings')
     // The onboarding hole stays declared for feature-owned steps; this plugin
     // no longer seats one.
     expect(before.slots.entries('settings.onboarding')).toEqual([])
@@ -193,7 +199,10 @@ describe('ui-settings-general apply', () => {
     for (const [name, component] of SEATS) {
       expect(b.slots.entries(name)[0]!.component).toBe(component)
     }
-    expect(b.slots.entries('settings.general.item')).toEqual([])
+    // The shell's own item comes back with the recovered chain.
+    const recoveredItems = b.slots.entries('settings.general.item')
+    expect(recoveredItems).toHaveLength(1)
+    expect(recoveredItems[0]!.component).toBe(AndroidDownloadRow)
     expect(b.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     // The recovered registrations still ride the locale path.
     b.locale.setLocale('en')
