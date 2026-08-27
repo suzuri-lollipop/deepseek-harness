@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider paths for the self-updater: the APK cache under the app cache dir. -->
+<paths>
+    <cache-path name="apks" path="apks/" />
+</paths>

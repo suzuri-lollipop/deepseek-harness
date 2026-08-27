@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-android-remote-client.md
-2026-08-22-android-remote-client.md: 6fd060533bac694b057a3613e778440bc720efa4
-2026-08-22-android-remote-client.zh.md: 4e05c8d5be5c5eadd196a94ed57b565ab9b3afe2
+2026-08-22-android-remote-client.md: e0f7e93980523c30280c241a66de1a0622986b6c
+2026-08-22-android-remote-client.zh.md: 9d46c285cb3bbf3d86c7a84af9c091e3e60fe61c
