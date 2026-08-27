@@ -10,8 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -19,22 +23,28 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.deepseekai.dsh.client.core.ApkDownload
 import com.deepseekai.dsh.client.core.ConnState
 import com.deepseekai.dsh.client.core.DshClient
 
 /**
  * Server URL entry and live connection status. Stays on screen while the
  * client connects and reconnects; flips to the session list on Ready.
+ * [onBack] adds the top-left back arrow when this screen is reached from
+ * the hero as the settings screen.
  */
 @Composable
 fun ConnectScreen(
@@ -42,11 +52,19 @@ fun ConnectScreen(
     initialUrl: String,
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     var url by rememberSaveable { mutableStateOf(initialUrl) }
     val state by client.state.collectAsStateWithLifecycle()
     val error by client.errorNote.collectAsStateWithLifecycle()
     val busy = state is ConnState.Connecting
+
+    val context = LocalContext.current
+    val apk = remember { ApkDownload(context) }
+    val apkScope = rememberCoroutineScope()
+    val apkPhase by apk.phase.collectAsStateWithLifecycle()
+    val apkProgress by apk.progress.collectAsStateWithLifecycle()
+    val apkError by apk.error.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -55,6 +73,13 @@ fun ConnectScreen(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (onBack != null) {
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L.BACK_JA)
+                }
+            }
+        }
         Spacer(modifier = Modifier.padding(top = 48.dp))
         Text(
             text = L.APP_TITLE_JA,
@@ -147,5 +172,70 @@ fun ConnectScreen(
             fontSize = 11.sp,
             textAlign = TextAlign.Center,
         )
+
+        // Self-update: the dsh web host serves the client APK beside the web
+        // dist, so the app can replace itself from any reachable host.
+        Spacer(modifier = Modifier.padding(top = 28.dp))
+        BiText(L.APP_DOWNLOAD_JA, L.APP_DOWNLOAD_EN)
+        Spacer(modifier = Modifier.padding(top = 12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when (apkPhase) {
+                ApkDownload.Phase.Idle -> OutlinedButton(
+                    onClick = {
+                        val base = client.normalizeUrl(url)
+                        if (base != null) apk.start(base, apkScope)
+                    },
+                    enabled = url.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    BiText(L.DOWNLOAD_APK_JA, L.DOWNLOAD_APK_EN, jaSize = 15f)
+                }
+
+                ApkDownload.Phase.Downloading -> Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(L.APK_DOWNLOADING_JA, fontSize = 13.sp)
+                    Text(
+                        text = "${apkProgress}%",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
+                }
+
+                ApkDownload.Phase.Ready -> Button(
+                    onClick = { apk.install() },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    BiText(L.INSTALL_APK_JA, L.INSTALL_APK_EN, jaSize = 15f)
+                }
+            }
+        }
+        if (apkPhase == ApkDownload.Phase.Ready) {
+            Spacer(modifier = Modifier.padding(top = 8.dp))
+            Text(
+                text = L.APK_INSTALL_HINT_JA,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (apkError != null) {
+            Spacer(modifier = Modifier.padding(top = 8.dp))
+            Text(
+                text = when (apkError) {
+                    "apk-missing" -> L.APK_NOT_ON_HOST_JA
+                    "not-apk" -> L.APK_INVALID_JA
+                    else -> "${L.APK_DOWNLOAD_FAILED_JA} (${apkError})"
+                },
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }

@@ -20,6 +20,33 @@ data class SessionSummary(
     val cwd: String?,
     val agentPreset: String?,
     val title: String?,
+    /** Subagent-origin marker ("subagent"); the tree hides those sessions. */
+    val origin: String?,
+)
+
+/**
+ * One workspace.* view row: a registered directory with its session
+ * membership. createdAt/updatedAt are epoch millis parsed from the wire's
+ * ISO timestamps (0 when absent or unparseable).
+ */
+data class WorkspaceView(
+    val workspaceId: String,
+    val path: String,
+    val title: String,
+    val sessionIds: List<String>,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+/** One agentPreset.list entry; name/description are published-optional. */
+data class PresetOption(
+    val id: String,
+    val trust: String,
+    val isDefault: Boolean,
+    val name: String?,
+    val description: String?,
+    /** Host-side reason the preset is unusable (e.g. a missing plugin); null when healthy. */
+    val broken: String?,
 )
 
 /** A still-pending approval server-request; the envelope rpcId is the answer correlation id. */

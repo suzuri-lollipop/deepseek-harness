@@ -20,6 +20,7 @@ import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -44,9 +45,21 @@ class DshClient(private val scope: CoroutineScope) {
     private val _sessions = MutableStateFlow<List<SessionSummary>>(emptyList())
     val sessions: StateFlow<List<SessionSummary>> = _sessions
 
+    /** workspace.list baseline, kept in Host order by the order frames. */
+    private val _workspaces = MutableStateFlow<List<WorkspaceView>>(emptyList())
+    val workspaces: StateFlow<List<WorkspaceView>> = _workspaces
+
+    /** Registry-global archived-session set; grouping surfaces hide these. */
+    private val _archivedSessionIds = MutableStateFlow<Set<String>>(emptySet())
+    val archivedSessionIds: StateFlow<Set<String>> = _archivedSessionIds
+
     /** Live attached-agent running bits from host frames, keyed by sessionId. */
     private val _running = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val running: StateFlow<Map<String, Boolean>> = _running
+
+    /** agentPreset.list baseline, in host order; the hero's mode chip reads it. */
+    private val _presets = MutableStateFlow<List<PresetOption>>(emptyList())
+    val presets: StateFlow<List<PresetOption>> = _presets
 
     private val _pendingApprovals = MutableStateFlow<Map<String, PendingApproval>>(emptyMap())
     val pendingApprovals: StateFlow<Map<String, PendingApproval>> = _pendingApprovals
@@ -121,6 +134,7 @@ class DshClient(private val scope: CoroutineScope) {
         _errorNote.value = null
         _pendingApprovals.value = emptyMap()
         _pendingQuestions.value = emptyMap()
+        _presets.value = emptyList()
     }
 
     /**
@@ -170,11 +184,130 @@ class DshClient(private val scope: CoroutineScope) {
         }
     }
 
-    suspend fun createSession(cwd: String?): String {
+    /**
+     * Create a session on the host. [workspaceId] attaches the new session to
+     * an existing Workspace (its cwd becomes the workspace path); [cwd]
+     * targets the directory directly; both omitted uses the host cwd. The
+     * wire accepts at most one of the two.
+     */
+    suspend fun createSession(workspaceId: String? = null, cwd: String? = null): String {
         val payload = JSONObject()
-        if (cwd != null) payload.put("cwd", cwd)
+        if (workspaceId != null) payload.put("workspaceId", workspaceId)
+        else if (cwd != null) payload.put("cwd", cwd)
         val value = call("session.create", payload)
         return value.optString("sessionId")
+    }
+
+    /** Re-baseline the workspace list and archived set from workspace.list. */
+    suspend fun refreshWorkspaces() {
+        val value = call("workspace.list", JSONObject())
+        val items = value.optJSONArray("items") ?: JSONArray()
+        _workspaces.value = (0 until items.length()).mapNotNull { parseWorkspaceView(items.optJSONObject(it)) }
+        _archivedSessionIds.value =
+            stringSetOf(value.optJSONArray("archivedSessionIds"))
+    }
+
+    /** Re-baseline the agent-preset roster from agentPreset.list. */
+    suspend fun refreshAgentPresets() {
+        val value = call("agentPreset.list", JSONObject())
+        val items = value.optJSONArray("presets") ?: JSONArray()
+        _presets.value = (0 until items.length()).mapNotNull { i ->
+            val obj = items.optJSONObject(i) ?: return@mapNotNull null
+            PresetOption(
+                id = obj.optString("id"),
+                trust = obj.optString("trust"),
+                isDefault = obj.optBoolean("isDefault"),
+                name = obj.strOrNull("name"),
+                description = obj.strOrNull("description"),
+                broken = obj.strOrNull("broken"),
+            )
+        }
+    }
+
+    /** Stage [presetId] for a blank session; the host refuses non-blank sessions. */
+    suspend fun selectAgentPreset(sessionId: String, presetId: String) {
+        val value = call(
+            "agentPreset.select",
+            JSONObject().put("sessionId", sessionId).put("agentPreset", presetId),
+        )
+        check(value.optString("agentPreset").isNotEmpty()) { "agentPreset.select returned no preset" }
+    }
+
+    private fun parseWorkspaceView(obj: JSONObject?): WorkspaceView? {
+        if (obj == null) return null
+        val ids = obj.optJSONArray("sessionIds") ?: JSONArray()
+        return WorkspaceView(
+            workspaceId = obj.optString("workspaceId"),
+            path = obj.optString("path"),
+            title = obj.optString("title"),
+            sessionIds = (0 until ids.length()).map { ids.optString(it) },
+            createdAt = isoMillis(obj.optString("createdAt")),
+            updatedAt = isoMillis(obj.optString("updatedAt")),
+        )
+    }
+
+    private fun isoMillis(iso: String): Long = try {
+        Instant.parse(iso).toEpochMilli()
+    } catch (e: Exception) {
+        0L
+    }
+
+    private fun stringSetOf(array: JSONArray?): Set<String> =
+        (array ?: JSONArray()).let { ids ->
+            (0 until ids.length()).mapTo(mutableSetOf()) { ids.optString(it) }
+        }
+
+    /** The workspace containing [sessionId], or null when the session is ungrouped. */
+    fun workspaceOf(sessionId: String): WorkspaceView? =
+        _workspaces.value.firstOrNull { workspace -> sessionId in workspace.sessionIds }
+
+    /**
+     * Most recently active workspace: the newest member session's updatedAt,
+     * falling back to the workspace creation time; ties keep Host order.
+     * Null when the list holds no workspace.
+     */
+    fun recentWorkspace(): WorkspaceView? {
+        val list = _workspaces.value
+        if (list.isEmpty()) return null
+        val byId = _sessions.value.associateBy { it.sessionId }
+        var selected: WorkspaceView? = null
+        var selectedTime = Long.MIN_VALUE
+        for (workspace in list) {
+            var latest = Long.MIN_VALUE
+            for (sessionId in workspace.sessionIds) {
+                val session = byId[sessionId]
+                if (session != null) latest = maxOf(latest, session.updatedAt)
+            }
+            if (latest == Long.MIN_VALUE) latest = workspace.createdAt
+            if (selected == null || latest > selectedTime) {
+                selected = workspace
+                selectedTime = latest
+            }
+        }
+        return selected
+    }
+
+    /**
+     * Resolve the session a new-session flow lands in for [workspace],
+     * mirroring the web runtime: reuse the workspace's existing blank session
+     * when one is a member, on the workspace path, and not archived;
+     * otherwise create a fresh session (with the workspaceId when
+     * [workspace] is given). Returns the sessionId to open.
+     */
+    suspend fun connectWorkspace(workspace: WorkspaceView?): String {
+        if (workspace != null) {
+            val archived = _archivedSessionIds.value
+            for (summary in _sessions.value) {
+                if (summary.blank &&
+                    summary.cwd == workspace.path &&
+                    workspace.sessionIds.contains(summary.sessionId) &&
+                    summary.sessionId !in archived
+                ) {
+                    return summary.sessionId
+                }
+            }
+        }
+        return createSession(workspace?.workspaceId)
     }
 
     suspend fun refreshSessions() {
@@ -358,6 +491,16 @@ class DshClient(private val scope: CoroutineScope) {
                 } catch (e: Exception) {
                     _errorNote.value = "session.list failed: ${e.message}"
                 }
+                try {
+                    refreshWorkspaces()
+                } catch (e: Exception) {
+                    _errorNote.value = "workspace.list failed: ${e.message}"
+                }
+                try {
+                    refreshAgentPresets()
+                } catch (e: Exception) {
+                    _errorNote.value = "agentPreset.list failed: ${e.message}"
+                }
             } catch (e: Exception) {
                 val base = url ?: return@launch
                 _state.value = ConnState.Connecting(base)
@@ -494,10 +637,53 @@ class DshClient(private val scope: CoroutineScope) {
                 if (sessionId.isNotEmpty()) liveFrames(sessionId).trySend(LiveFrame.AgentError(message))
             }
 
+            "host/workspace-changed" -> {
+                val view = parseWorkspaceView(payload.optJSONObject("workspace"))
+                if (view != null) _workspaces.value = upsertWorkspace(_workspaces.value, view)
+            }
+
+            "host/workspace-removed" -> {
+                val id = payload.optString("workspaceId")
+                if (id.isNotEmpty()) _workspaces.value = _workspaces.value.filter { it.workspaceId != id }
+            }
+
+            "host/workspace-order-changed" -> {
+                val order = payload.optJSONArray("workspaceIds") ?: return
+                _workspaces.value = reorderWorkspaces(
+                    _workspaces.value,
+                    (0 until order.length()).map { order.optString(it) },
+                )
+            }
+
+            "host/archived-sessions-changed" -> {
+                val ids = payload.optJSONArray("archivedSessionIds") ?: return
+                _archivedSessionIds.value = stringSetOf(ids)
+            }
+
             else ->
-                // workspace/order/archived/remote frames are out of scope for v1.
+                // host/remote-event frames are out of scope for v1.
                 Unit
         }
+    }
+
+    /**
+     * Upsert one workspace view: a known id keeps its position with the new
+     * view; an unknown id enters at the front (the Host's new-workspace
+     * position, mirrored from the web runtime).
+     */
+    private fun upsertWorkspace(list: List<WorkspaceView>, view: WorkspaceView): List<WorkspaceView> {
+        val known = list.any { it.workspaceId == view.workspaceId }
+        val replaced = list.map { if (it.workspaceId == view.workspaceId) view else it }
+        return if (known) replaced else listOf(view) + replaced
+    }
+
+    /** Apply a full Host order; ids absent from it trail in current order. */
+    private fun reorderWorkspaces(list: List<WorkspaceView>, order: List<String>): List<WorkspaceView> {
+        val rank = order.withIndex().associate { (index, id) -> id to index }
+        val ordered = list.filter { rank.containsKey(it.workspaceId) }
+            .sortedBy { rank.getValue(it.workspaceId) }
+        val trailing = list.filter { !rank.containsKey(it.workspaceId) }
+        return ordered + trailing
     }
 
     private fun updateTitle(sessionId: String, title: String?) {
@@ -515,7 +701,12 @@ class DshClient(private val scope: CoroutineScope) {
         else -> e.message ?: e.javaClass.simpleName
     }
 
-    private fun normalizeUrl(raw: String): String? {
+    /**
+     * Trim, drop the trailing slash, add a missing http(s) scheme, and
+     * validate the result. Null when the input is not an http(s) URL with a
+     * host; also the normalization used by the APK download path.
+     */
+    fun normalizeUrl(raw: String): String? {
         var s = raw.trim().removeSuffix("/")
         if (s.isEmpty()) return null
         if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://$s"
@@ -542,6 +733,7 @@ class DshClient(private val scope: CoroutineScope) {
             cwd = obj.strOrNull("cwd"),
             agentPreset = obj.strOrNull("agentPreset"),
             title = values?.strOrNull("title"),
+            origin = obj.strOrNull("origin"),
         )
     }
 

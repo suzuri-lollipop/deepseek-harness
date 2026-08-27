@@ -28,7 +28,7 @@ Status: implemented
 
 ## Consequences
 
-应用是纯消费者：不改宿主、不改 web 客户端、不加任何新的线面。就绪与恢复依赖 `host.describe` 和两条流；协议不推送的东西（队列位置、图片附件、手动 load-older 之外的历史）留在 v1 之外。模型回合需要宿主机上的 `DEEPSEEK_API_KEY`；没有它时其余流程全部正常，prompt 以 provider 错误失败并作为聊天里的注释显示。信任围栏不变：非 loopback 主机需要为手机的 Host 名传 `--trusted-host`（仓库的 `start-web-tailscale.bat` 已经传了），403 会连同该提示一起显示。构建方面，工程只 pin 离线构件缓存里已有的版本（Compose BOM 2026.06.01、AGP 8.13.2、JDK 17），Maven 构件缺失时用 build-tools 36.0.0 的 `aapt2`（`android.aapt2FromMavenOverride`），`~/.android` 不可写时用工程内 keystore 给 debug 构建签名。
+应用是纯消费者：不改宿主、不改 web 客户端、不加任何新的线面。其后的 [Android APK 自更新与可见的 OS 状态栏](2026-08-26-android-apk-self-update-and-status-bars.zh.md) 改动以宿主配信的一个只读资产（`/dsh-android.apk` 上的 debug APK）扩展了这一范围。就绪与恢复依赖 `host.describe` 和两条流；协议不推送的东西（队列位置、图片附件、手动 load-older 之外的历史）留在 v1 之外。模型回合需要宿主机上的 `DEEPSEEK_API_KEY`；没有它时其余流程全部正常，prompt 以 provider 错误失败并作为聊天里的注释显示。信任围栏不变：非 loopback 主机需要为手机的 Host 名传 `--trusted-host`（仓库的 `start-web-tailscale.bat` 已经传了），403 会连同该提示一起显示。构建方面，工程只 pin 离线构件缓存里已有的版本（Compose BOM 2026.06.01、AGP 8.13.2、JDK 17），Maven 构件缺失时用 build-tools 36.0.0 的 `aapt2`（`android.aapt2FromMavenOverride`），`~/.android` 不可写时用工程内 keystore 给 debug 构建签名。
 
 按事件 `Log.d` 在这里是正确性隐患，不只是噪音：在 AOSP 模拟器上，per-event 日志风暴（每次种子数万行）引发的 logd 背压把 load-older 页的主线程 prepend 阻塞了十五分钟以上，而管线本身（抓取 + 拆包 + prepend 约 45k 事件）只要约 4.6 秒。发布面只保留稀有诊断（parser 拒绝的帧、load-older 失败）。
 
@@ -40,4 +40,5 @@ Status: implemented
 
 ## Related
 
-- [API proxy wire protocol](../../../../../packages/host/apiproxy/README.md) — 本客户端消费的 `client-request` / `client-response` 信封与两条事件下行流。
+- [Android hero 画面复刻 web 空会话构图](2026-08-24-android-hero-screen.zh.md) — 取代列表、成为已连接落地面的 hero 根。
+- [API proxy wire protocol](../../../../packages/host/apiproxy/README.zh.md) — 本客户端消费的 `client-request` / `client-response` 信封与两条事件下行流。

@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
+import com.deepseekai.dsh.client.core.PresetOption
 
 /**
  * The app is bilingual by design: Japanese primary, English alongside.
@@ -84,15 +85,103 @@ object L {
         "サーバーは dsh web で起動し、このホスト名を --trusted-host で許可している必要があります。"
     const val TRUST_HINT_EN =
         "Start the server with dsh web and allow this hostname via --trusted-host."
+
+    const val APP_DOWNLOAD_JA = "アプリのインストール"
+    const val APP_DOWNLOAD_EN = "Install the app"
+    const val DOWNLOAD_APK_JA = "APK をダウンロード"
+    const val DOWNLOAD_APK_EN = "Download APK"
+    const val APK_DOWNLOADING_JA = "APK をダウンロード中…"
+    const val APK_DOWNLOADING_EN = "Downloading APK…"
+    const val INSTALL_APK_JA = "インストール"
+    const val INSTALL_APK_EN = "Install"
+    const val APK_INSTALL_HINT_JA = "インストール開始時にアプリは一旦終了します。"
+    const val APK_INSTALL_HINT_EN = "The app closes briefly while the installer runs."
+    const val APK_DOWNLOAD_FAILED_JA = "APK のダウンロードに失敗しました"
+    const val APK_DOWNLOAD_FAILED_EN = "APK download failed"
+    const val APK_NOT_ON_HOST_JA = "このサーバーは APK を配信していません"
+    const val APK_NOT_ON_HOST_EN = "This host does not serve an APK"
+    const val APK_INVALID_JA = "ダウンロードしたファイルは APK ではありません"
+    const val APK_INVALID_EN = "Downloaded file is not an APK"
+    const val APK_INVALID_URL_JA = "サーバー URL が不正です"
+    const val APK_INVALID_URL_EN = "Server URL is invalid"
     const val REFETCHED_JA = "再接続しました。履歴を再取得します"
     const val REFETCHED_EN = "Reconnected; refetching history"
     const val BLANK_TITLE_JA = "新しいセッション"
     const val BLANK_TITLE_EN = "New session"
+    const val WORKSPACES_JA = "ワークスペース"
+    const val WORKSPACES_EN = "Workspaces"
+    const val UNGROUPED_JA = "未グループ"
+    const val UNGROUPED_EN = "Ungrouped"
+    const val ADD_SESSION_JA = "ワークスペースにセッションを追加"
+    const val ADD_SESSION_EN = "Add a session to this workspace"
+
+    // Hero (new session) screen.
+    const val HERO_HEADLINE_JA = "未知の世界へ"
+    const val HERO_HEADLINE_EN = "Into the Unknown"
+    const val HERO_PREVIEW_JA = "プレビュー"
+    const val HERO_PREVIEW_EN = "Preview"
+    const val HERO_PLACEHOLDER_JA = "作成したいことを説明してください"
+    const val HERO_PLACEHOLDER_EN = "Describe what you want to build"
+    const val CHOOSE_WORKSPACE_JA = "ワークスペースを選択"
+    const val CHOOSE_WORKSPACE_EN = "Choose workspace"
+    const val WORKSPACE_JA = "ワークスペース"
+    const val WORKSPACE_EN = "Workspace"
+    const val HOST_CWD_JA = "ホストカレントディレクトリ"
+    const val HOST_CWD_EN = "Host cwd"
+    const val WORKSPACE_EMPTY_JA = "ワークスペースが登録されていません"
+    const val WORKSPACE_EMPTY_EN = "No workspaces registered"
+    const val PRESET_JA = "エージェントプリセット"
+    const val PRESET_EN = "Agent preset"
+    const val PRESET_EMPTY_JA = "プリセットを取得できません"
+    const val PRESET_EMPTY_EN = "No presets available"
+    const val DEFAULT_PRESET_JA = "デフォルト"
+    const val DEFAULT_PRESET_EN = "Default"
+    const val BROKEN_JA = "（破損）"
+    const val BROKEN_EN = " (broken)"
+    const val NEW_CHAT_JA = "新規チャット"
+    const val NEW_CHAT_EN = "New chat"
+    const val NEW_TERMINAL_JA = "新規ターミナル"
+    const val NEW_TERMINAL_EN = "New terminal"
+    const val SETTINGS_JA = "設定"
+    const val SETTINGS_EN = "Settings"
+    const val BACK_JA = "戻る"
+    const val BACK_EN = "Back"
+    const val NOT_IMPLEMENTED_JA = "まだ実装されていません"
+    const val NOT_IMPLEMENTED_EN = "Not implemented yet"
+    const val ADD_MORE_JA = "追加"
+    const val ADD_MORE_EN = "Add"
+    const val PERMISSION_JA = "権限モード"
+    const val PERMISSION_EN = "Permission mode"
+    const val ATTACH_JA = "ファイルを添付"
+    const val ATTACH_EN = "Attach files"
+    const val MODEL_JA = "モデル"
+    const val MODEL_EN = "Model"
+    const val HOME_JA = "ホーム"
+    const val HOME_EN = "Home"
+    const val NO_WORKSPACE_HINT_JA = "ワークスペースがありません。ホストの作業ディレクトリで作成します。"
+    const val NO_WORKSPACE_HINT_EN = "No workspaces; sessions start in the host cwd."
 }
 
 /** Last path segment of [path] for either separator style; null when absent. */
 internal fun basenameOf(path: String?): String? =
     path?.split('/', '\\')?.lastOrNull()?.takeIf { it.isNotEmpty() }
+
+/**
+ * Display name for [preset], mirroring the web client's `presetDisplayText`:
+ * a shipped (system) preset uses its localized built-in name, everything else
+ * falls back to the preset's own metadata, then its id.
+ */
+internal fun presetDisplayName(preset: PresetOption): String =
+    if (preset.trust == "system") BUILT_IN_PRESET_NAMES[preset.id] ?: preset.name ?: preset.id
+    else preset.name ?: preset.id
+
+/** Built-in preset display names; the web client's English locale copy. */
+private val BUILT_IN_PRESET_NAMES = mapOf(
+    "standard" to "Standard mode",
+    "code" to "PTC mode",
+    "minimal" to "Minimal mode",
+    "cordis" to "Creator mode",
+)
 
 /** Japanese primary line with the English translation alongside in a smaller muted style. */
 @Composable
