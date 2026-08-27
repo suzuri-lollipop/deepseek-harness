@@ -309,6 +309,114 @@ describe('local request-image cache', () => {
     expect(readSignal?.reason).toBe(reason)
   })
 
+  // A clean, in-budget source passes through normalization byte-identically,
+  // so saving a WebP or JPEG source directly yields a stored attachment of
+  // that class — the same path that turns an alpha screenshot into a stored
+  // WebP an image-only route cannot pass through.
+  async function storedSource(mediaType: 'image/webp' | 'image/jpeg', hasAlpha: boolean): Promise<Uint8Array> {
+    const width = 64
+    const height = 32
+    const channels = hasAlpha ? 4 : 3
+    const pixels = new Uint8Array(width * height * channels)
+    let state = 0x2545f491
+    for (let offset = 0; offset < pixels.length; offset += 1) {
+      state ^= state << 13
+      state ^= state >>> 17
+      state ^= state << 5
+      pixels[offset] = state & 0xff
+    }
+    const pipeline = sharp(pixels, { raw: { width, height, channels } })
+    return new Uint8Array(mediaType === 'image/webp'
+      ? await pipeline.webp({ quality: 85 }).toBuffer()
+      : await pipeline.jpeg({ quality: 85 }).toBuffer())
+  }
+
+  it('re-encodes a stored alpha WebP attachment into a declared PNG media type', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await storedSource('image/webp', true), mediaType: 'image/webp' })
+    const stored = await attachments.readImage(attachment)
+    expect(Buffer.from(stored.data.slice(0, 4)).toString('ascii')).toBe('RIFF')
+    const unrestrictedPolicy = { maxPixels: 16 * 16, maxBytes: 1024 * 1024 }
+    const restrictedPolicy = { ...unrestrictedPolicy, mediaTypes: ['image/png'] as const }
+
+    const unrestricted = await attachments.readImageRequest(attachment, unrestrictedPolicy)
+    const restricted = await attachments.readImageRequest(attachment, restrictedPolicy)
+    const repeated = await attachments.readImageRequest(attachment, restrictedPolicy)
+
+    expect(unrestricted.mediaType).toBe('image/webp')
+    expect(restricted.mediaType).toBe('image/png')
+    expect(restricted.hasAlpha).toBe(true)
+    expect(restricted.variantId).not.toBe(unrestricted.variantId)
+    expect(repeated.variantId).toBe(restricted.variantId)
+    expect(repeated.data).toEqual(restricted.data)
+  })
+
+  it('passes through a stored attachment the declared media types name', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
+    const stored = await attachments.readImage(attachment)
+
+    const request = await attachments.readImageRequest(attachment, {
+      maxPixels: 1_000,
+      maxBytes: 1024 * 1024,
+      mediaTypes: ['image/png', 'image/jpeg'],
+    })
+
+    expect(request.data).toEqual(stored.data)
+    expect(request.mediaType).toBe('image/png')
+  })
+
+  it('re-encodes a stored JPEG attachment into a declared PNG media type', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await storedSource('image/jpeg', false), mediaType: 'image/jpeg' })
+    const stored = await attachments.readImage(attachment)
+    expect(Buffer.from(stored.data.slice(0, 2)).toString('hex')).toBe('ffd8')
+
+    const request = await attachments.readImageRequest(attachment, {
+      maxPixels: 128 * 128,
+      maxBytes: 1024 * 1024,
+      mediaTypes: ['image/png'],
+    })
+
+    expect(request.mediaType).toBe('image/png')
+    expect(request.hasAlpha).toBe(false)
+  })
+
+  it('re-encodes a low-colour stored PNG attachment into a declared JPEG media type', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
+
+    const request = await attachments.readImageRequest(attachment, {
+      maxPixels: 1_000,
+      maxBytes: 1024 * 1024,
+      mediaTypes: ['image/jpeg'],
+    })
+
+    expect(request.mediaType).toBe('image/jpeg')
+  })
+
+  it('refuses an alpha image when the declared media types cannot carry alpha', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await storedSource('image/webp', true), mediaType: 'image/webp' })
+
+    await expect(attachments.readImageRequest(attachment, {
+      maxPixels: 16 * 16,
+      maxBytes: 1024 * 1024,
+      mediaTypes: ['image/jpeg'],
+    })).rejects.toMatchObject({ code: 'UNSUPPORTED_IMAGE_TYPE' })
+  })
+
+  it('rejects an empty declared media type list', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
+
+    await expect(attachments.readImageRequest(attachment, {
+      maxPixels: 1_000,
+      maxBytes: 1024 * 1024,
+      mediaTypes: [],
+    })).rejects.toThrow('Image request mediaTypes must name at least one media type')
+  })
+
   it('normalizes a non-Error cancellation and replaces an aborted shared transform', async () => {
     const attachments = await store()
     const attachment = await attachments.saveImage({

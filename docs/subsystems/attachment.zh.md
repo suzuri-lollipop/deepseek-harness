@@ -100,6 +100,13 @@ interface ImageRequestPolicy {
   maxPixels: number
   /** Encoded-byte cap before base64 expansion or Files API upload. */
   maxBytes: number
+  /**
+   * Media types the route's backend decodes for inline request images.
+   * Omission keeps every stored media type; a present non-empty list
+   * blocks pass-through of stored attachments it does not name and makes
+   * request versions re-encode into an allowed type.
+   */
+  mediaTypes?: readonly ImageMediaType[]
 }
 ```
 
@@ -179,7 +186,8 @@ abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<Store
 /**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
- * @param policy - exact route pixel and encoded-byte budget.
+ * @param policy - exact route pixel and encoded-byte budget, plus the media
+ * types the route's backend decodes when the route declares them.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */

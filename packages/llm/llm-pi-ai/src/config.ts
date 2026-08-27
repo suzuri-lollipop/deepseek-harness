@@ -16,6 +16,8 @@
 
 import type { CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
 import z from '@deepseek-ai/schemastery'
+import { IMAGE_MEDIA_TYPES } from '@deepseek-ai/dsh-attachment'
+import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -171,6 +173,17 @@ export interface PiAiProviderProfile {
   requestImagePixelBudget?: number
   /** Raw encoded-byte cap for each deterministic inline request version. */
   requestImageMaxBytes?: number
+  /**
+   * Media types the route's backend decodes for inline request images. Omission
+   * — or empty — keeps every stored media type; a present list makes the
+   * request-image pipeline re-encode a stored attachment the list does not name
+   * into an allowed type instead of sending it. A local OpenAI-compatible
+   * backend such as llama.cpp decodes PNG and JPEG but not WebP, so a route in
+   * front of one declares `[image/png, image/jpeg]` rather than stalling the
+   * session on the backend's image-load 400 once a WebP request version enters
+   * the history.
+   */
+  requestImageMediaTypes?: ImageMediaType[]
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
@@ -326,6 +339,10 @@ const profile = z.object({
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
   requestImagePixelBudget: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
   requestImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_MAX_BYTES),
+  // No explicit default: schemastery materializes `[]` for an absent list, and
+  // resolution reads absent and empty alike: the pipeline keeps every stored
+  // media type.
+  requestImageMediaTypes: z.array(z.union(IMAGE_MEDIA_TYPES)),
   retryPolicy: RetryPolicySchema,
 })
 
@@ -413,6 +430,14 @@ export function resolveProfiles(
     if (!Number.isSafeInteger(requestImageMaxBytes) || requestImageMaxBytes <= 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" requestImageMaxBytes must be a positive safe integer`)
     }
+    // Absent and empty are the same request: the schema materializes `[]` for
+    // an absent list, and both keep every stored media type. A
+    // present list is detached like defaultInput, so a later configuration
+    // rewrite cannot mutate a resolved route.
+    const requestImageMediaTypes = source.requestImageMediaTypes
+      && source.requestImageMediaTypes.length > 0
+      ? [...source.requestImageMediaTypes]
+      : undefined
     // Detached from the configuration object because pi-ai types `Model.input`
     // mutable. The schema's explicit default covers an absent key, so an empty
     // list here is always one someone typed — and unlike an entry's, nothing
@@ -437,7 +462,14 @@ export function resolveProfiles(
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const {
+      apiKeyEnv,
+      retryPolicy,
+      models: _models,
+      displayName: _displayName,
+      requestImageMediaTypes: _requestImageMediaTypes,
+      ...rest
+    } = source
     resolved.set(provider, {
       ...rest,
       provider,
@@ -447,6 +479,7 @@ export function resolveProfiles(
       maxRequestImageBytes,
       requestImagePixelBudget,
       requestImageMaxBytes,
+      ...requestImageMediaTypes === undefined ? {} : { requestImageMediaTypes },
       retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },

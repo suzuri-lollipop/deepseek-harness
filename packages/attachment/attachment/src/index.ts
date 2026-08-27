@@ -5,6 +5,7 @@ import { AttachmentError } from './error.ts'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  ImageMediaType,
   ImageRequestPolicy,
   RequestImageAttachment,
   SaveImageAttachment,
@@ -15,6 +16,14 @@ export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export { admitEncodedImages } from './admission.ts'
+
+/** Every raster image media type the version-one attachment path accepts. */
+export const IMAGE_MEDIA_TYPES: readonly ImageMediaType[] = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+]
 export type {
   AttachmentId as AttachmentIdType,
   EncodedImageAttachment,
@@ -110,7 +119,8 @@ export abstract class AttachmentStore extends Service {
   /**
    * Generate or read one deterministic model-request version from the stored normalized image.
    * @param ref - durable provider-independent normalized attachment reference.
-   * @param policy - exact route pixel and encoded-byte budget.
+   * @param policy - exact route pixel and encoded-byte budget, plus the media
+   * types the route's backend decodes when the route declares them.
    * @param signal - optional cancellation.
    * @returns request bytes and the cache/upload identity covering every transform input.
    */

@@ -73,6 +73,13 @@ export interface ImageRequestPolicy {
   maxPixels: number
   /** Encoded-byte cap before base64 expansion or Files API upload. */
   maxBytes: number
+  /**
+   * Media types the route's backend decodes for inline request images.
+   * Omission keeps every stored media type; a present non-empty list
+   * blocks pass-through of stored attachments it does not name and makes
+   * request versions re-encode into an allowed type.
+   */
+  mediaTypes?: readonly ImageMediaType[]
 }
 
 /** Cached request version derived from one provider-independent normalized attachment. */
