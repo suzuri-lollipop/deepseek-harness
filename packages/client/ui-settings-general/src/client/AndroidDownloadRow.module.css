@@ -1,0 +1,43 @@
+/* Android client row: title + download link + host hint, the same column
+ * rhythm as the other General rows. */
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Link uses the established markdown link color, underlined on hover only. */
+.download {
+  align-self: flex-start;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-state-business-primary);
+  text-decoration: none;
+  transition: box-shadow var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.download:hover,
+.download:focus {
+  outline: none;
+  text-decoration: underline var(--dsw-alias-state-business-primary);
+}
+
+.download:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}

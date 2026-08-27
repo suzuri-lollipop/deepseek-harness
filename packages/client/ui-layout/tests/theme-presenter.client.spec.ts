@@ -76,6 +76,20 @@ describe('ThemePresenter', () => {
     expect(document.body.style.getPropertyValue('--dsw-alias-fg')).toBe('')
   })
 
+  it('adopts a boot-time metadata node instead of minting a second one', () => {
+    const bootMeta = document.createElement('meta')
+    bootMeta.name = 'theme-color'
+    bootMeta.content = '#fff'
+    document.head.append(bootMeta)
+    const presenter = new ThemePresenter()
+    presenter.apply(snapshot('dark'))
+    expect(themeColorMeta()).toBe(bootMeta)
+    expect(bootMeta.content).toBe(DARK_THEME_COLOR)
+    expect(document.head.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1)
+    presenter.dispose()
+    expect(bootMeta.isConnected).toBe(false)
+  })
+
   it('dispose removes color-scheme, the attribute, and every applied variable, sparing foreign inline styles', () => {
     document.body.style.setProperty('--foreign', 'kept')
     const presenter = new ThemePresenter()

@@ -3,8 +3,9 @@
  * `sidebar.settings` occupant — panel chrome, section navigation, and the
  * onboarding stage — and registers everything on the Settings pages that
  * belongs to no single feature: the trigger/header chrome content,
- * local-document action, General section, and `settings` dictionaries.
- * Feature-owned rows and sections stay with their features.
+ * local-document action, Android client download row, General section, and
+ * `settings` dictionaries. Feature-owned rows and sections stay with their
+ * features.
  * Export discipline: packages/client/AGENTS.md.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -23,6 +24,7 @@ import { SettingsRoot } from './SettingsRoot.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
+import { AndroidDownloadRow } from './AndroidDownloadRow.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
 import { en, zh, type SettingsKey } from './locales.ts'
@@ -33,6 +35,7 @@ export type {
 export type {
   GeneralSectionComponentProps,
 } from './GeneralSection.tsx'
+export type { AndroidDownloadRowProps } from './AndroidDownloadRow.tsx'
 export type { SettingsDocumentActionInjected, SettingsDocumentActionProps } from './SettingsDocumentAction.tsx'
 export type { SettingsDocumentState } from './settings-document-store.ts'
 export { SettingsDocumentStore } from './settings-document-store.ts'
@@ -174,4 +177,12 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
   }, GeneralSection))
+  // Shell-owned item: the Android client row points at the APK this dsh web
+  // host serves beside the dist; no feature package owns it.
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'android',
+    order: 30,
+    locale: NS,
+  }, AndroidDownloadRow))
 }

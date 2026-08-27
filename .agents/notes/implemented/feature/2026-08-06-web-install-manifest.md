@@ -10,9 +10,9 @@ The Web build has a document title and favicon but no manifest from which a brow
 
 ## Decision
 
-The Web entry links `/manifest.webmanifest`, which Vite copies from `apps/web/public/` into the production build. The manifest names the product `DeepSeek Harness`, gives installed chrome the compact name `DSH`, and fixes `id`, `start_url`, and `scope` at `/`. It requests `display: "fullscreen"` so supporting browsers can give the installed editor-like surface the available display area while leaving ordinary tabs unchanged; browsers may apply user overrides or fall back to another display mode. Its icon entry reuses `/favicon.svg` as an SVG of size `any` and purpose `any`.
+The Web entry links `/manifest.webmanifest`, which Vite copies from `apps/web/public/` into the production build. The manifest names the product `DeepSeek Harness`, gives installed chrome the compact name `DSH`, and fixes `id`, `start_url`, and `scope` at `/`. It requested `display: "fullscreen"` so supporting browsers could give the installed editor-like surface the available display area while leaving ordinary tabs unchanged; browsers may apply user overrides or fall back to another display mode. The display-mode choice was superseded: [Android APK self-update and visible OS status bars](2026-08-26-android-apk-self-update-and-status-bars.md) records `standalone` as the current request, because installed users want the OS status bar visible. Its icon list carries three opaque PNG launcher icons committed under `apps/web/public/icons/` (192- and 512-pixel `any`, 512-pixel `maskable`); the [Android PWA launcher icon](../bug-fix/2026-08-27-android-pwa-launcher-icon.md) note records why the theme-aware SVG favicon cannot serve as a launcher icon.
 
-This follows code-server's fullscreen choice without copying its `window-controls-overlay` display override. DSH has no custom title bar or layout around native window controls, so such an override would supersede fullscreen without owning the required safe layout.
+The manifest omits the `window-controls-overlay` display override: DSH owns no custom title bar or layout around native window controls, so adopting it would require the app to draw and own the safe layout around them.
 
 The manifest deliberately has no `lang`, `theme_color`, or `background_color`. The product surface is bilingual rather than owned by one manifest language, and either static color can disagree with one of the resolved app palettes. Theme metadata therefore remains outside the install manifest.
 
@@ -30,10 +30,10 @@ The built-Web test parses the emitted manifest and pins the complete metadata ob
 
 **Choose one static background and theme color.** Rejected because the app resolves light and dark palettes at runtime, so either fixed value is knowingly wrong for one supported state.
 
-**Ship raster and maskable icon variants immediately.** Rejected until a supported installation target demonstrates a requirement the existing scalable favicon cannot meet. New variants remain an additive manifest change rather than a prerequisite for exposing the current identity.
+**Ship raster and maskable icon variants immediately.** Rejected until a supported installation target demonstrates a requirement the existing scalable favicon cannot meet. That requirement arrived: Android composes launcher icons over its own background, and the [Android PWA launcher icon](../bug-fix/2026-08-27-android-pwa-launcher-icon.md) note records the opaque PNG variants — the deferred additive change — that now ship.
 
 **Assert only root and display fields in the built artifact.** Rejected because dropping or changing the product name, compact name, or icon is also a shipped install regression. The test intentionally requires an explicit edit whenever any manifest metadata changes.
 
 ## Consequences
 
-Supporting browsers can discover a stable root-scoped installed identity and fullscreen preference without the application promising offline behavior. Deploying this build below a path prefix requires revisiting the absolute link, identity, launch, scope, and icon URLs together. Browser-specific icon requirements may add variants later, and every intentional metadata change updates the exact built-artifact contract.
+Supporting browsers can discover a stable root-scoped installed identity and standalone display preference without the application promising offline behavior. Deploying this build below a path prefix requires revisiting the absolute link, identity, launch, scope, and icon URLs together. Android's launcher requirements already added the opaque PNG variants, and every intentional metadata change updates the exact built-artifact contract.

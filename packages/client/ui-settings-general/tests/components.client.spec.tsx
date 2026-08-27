@@ -9,6 +9,7 @@ import type { TriggerContentProps } from '../src/client/chrome.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { SettingsDocumentStore } from '../src/client/settings-document-store.ts'
+import { AndroidDownloadRow } from '../src/client/AndroidDownloadRow.tsx'
 
 /** Store over a real mirror derived from the same fake wire. */
 function derivedDocumentStore(api: object) {
@@ -62,6 +63,17 @@ describe('GeneralSection', () => {
     const { renderSlot } = mount()
     expect(renderSlot).toHaveBeenCalledWith('settings.general.item', {})
     expect(screen.getByTestId('slot-settings.general.item')).toBeTruthy()
+  })
+})
+
+describe('AndroidDownloadRow', () => {
+  it('links to the APK the dsh web host serves beside the dist', () => {
+    render(<AndroidDownloadRow {...kit} t={t} />)
+    expect(screen.getByText('Android app')).toBeTruthy()
+    const link = screen.getByRole('link', { name: 'Download APK' })
+    expect(link.getAttribute('href')).toBe('/dsh-android.apk')
+    expect(link.hasAttribute('download')).toBe(true)
+    expect(screen.getByText('Download the Android client package (dsh-android.apk) from this dsh web host.')).toBeTruthy()
   })
 })
 

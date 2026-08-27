@@ -8,6 +8,19 @@ body,
   margin: 0;
 }
 
+/* `viewport-fit=cover` in the shell index.html extends the layout under the
+   phone's OS chrome even in the installed standalone PWA, so the mount keeps
+   content clear of the status bar (top), home indicator (bottom), and display
+   cutout (sides). */
+#root {
+  box-sizing: border-box;
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
 body {
   font-family: var(
     --dsw-font-family,

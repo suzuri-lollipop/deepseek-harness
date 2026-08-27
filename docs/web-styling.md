@@ -6,9 +6,11 @@ This reference defines styling ownership and component rules for browser client 
 
 ## Ownership
 
-[`ui-theme`](../packages/client/ui-theme/README.md) owns the `--dsw-*` static scale, semantic aliases, typography, motion, gradients, shadows, scrollbar styles, and light/dark preference. [`ui-layout`](../packages/client/ui-layout/README.md) applies the resolved theme snapshot to the document. Feature packages consume semantic aliases and do not define another global theme.
+[`ui-theme`](../packages/client/ui-theme/README.md) owns the `--dsw-*` static scale, semantic aliases, typography, motion, gradients, shadows, scrollbar styles, and light/dark preference. [`ui-layout`](../packages/client/ui-layout/README.md) applies the resolved theme snapshot to the document, including the browser-chrome `theme-color` meta — the node the [`ui-theme`](../packages/client/ui-theme/README.md) bootstrap installs before first paint, which Android standalone PWAs read when they fix the navigation bar color at the initial page commit. Feature packages consume semantic aliases and do not define another global theme.
 
 Global style sheets belong in `ui-theme/src/styles/`. Component styles live beside their component as CSS Modules. A component may define a local custom property when its value is part of that component's layout or presentation contract; shared colors, typography, elevation, and motion belong to the theme package.
+
+The web mount owns the viewport contract: [`apps/web/index.html`](../apps/web/index.html) carries the viewport meta with `viewport-fit=cover`, and the `#root` safe-area padding in [`packages/client/web/src/base.css`](../packages/client/web/src/base.css) keeps the installed PWA clear of phone OS chrome (status bar, home indicator, display cutout).
 
 ## Component rules
 

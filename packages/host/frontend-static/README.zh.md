@@ -16,5 +16,5 @@ Web 壳的 SPA dist 服务器：一个函数插件（配置为 `{distIndex}`）�
 
 ## 已知限制与延期工作
 
-- **初始 MIME 表很精简**：它覆盖 Vite 输出的资产集合及实际交付的 PWA manifest；其他扩展名在相应资产类别实际发布前都会回退到 `application/octet-stream`。
+- **初始 MIME 表很精简**：它覆盖 Vite 输出的资产集合、实际交付的 PWA manifest，以及 `dsh web` 宿主可以随 dist 一起分发的 Android 包文件（位于 `/dsh-android.apk` 的 Android 客户端 APK）；其他扩展名在相应资产类别实际发布前都会回退到 `application/octet-stream`。
 - **pathname 路由是显式的**：当前客户端只从根路径或配置的 index 路径进入，没有 History API pathname 路由。添加这类路由时必须同时添加显式服务器规则和真实组合测试，不得为每个未命中项启用宽泛回退。
