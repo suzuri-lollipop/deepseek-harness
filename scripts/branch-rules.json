@@ -1,0 +1,41 @@
+{
+  "remote": "fork",
+  "mergeTarget": "develop",
+  "unmatchedPolicy": "develop",
+  "skip": [
+    ".shots/**",
+    "androidx/**",
+    "[dsh]",
+    "[foreign]",
+    "start-web-tailscale.bat"
+  ],
+  "rules": [
+    {
+      "branch": "feature/android-remote-client",
+      "scope": "android",
+      "patterns": [
+        "apps/android/**",
+        ".agents/notes/**/2026-08-22-android-remote-client.*",
+        ".agents/notes/**/2026-08-24-android-hero-screen.*",
+        ".agents/notes/**/2026-08-26-android-apk-self-update-and-status-bars.*"
+      ]
+    },
+    {
+      "branch": "feature/webui",
+      "scope": "web-ui",
+      "patterns": [
+        "apps/web/**",
+        "packages/client/**",
+        "packages/host/frontend-static/**",
+        "docs/web-styling.md",
+        "docs/web-styling.zh.md",
+        "docs/web-styling.i18n.yaml",
+        "scripts/gen-web-icons.ts",
+        "scripts/gen-web-icons.spec.ts",
+        ".agents/notes/**/2026-08-06-web-install-manifest.*",
+        ".agents/notes/**/2026-08-26-pwa-os-bars-follow-resolved-theme.*",
+        ".agents/notes/**/2026-08-27-android-pwa-launcher-icon.*"
+      ]
+    }
+  ]
+}
