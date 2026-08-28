@@ -349,6 +349,21 @@ describe('WorkspaceRuntime', () => {
     await expect(workspaces.createDirectory('/home/u', 'fresh')).rejects.toMatchObject({ rpcError: { code: 'directory-exists' } })
   })
 
+  it('probes the filesystem roots through the browse wire, wrapping business failures', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const workspaces = new WorkspaceRuntime(ctx, api, new SessionRuntime(ctx, api, fakeRemote()))
+    const roots = [{ name: 'C:\\', path: 'C:\\', hidden: false }, { name: '/', path: '/', hidden: false }]
+    api.onListRoots = () => Promise.resolve(ok({ roots }))
+    await expect(workspaces.listDirectoryRoots()).resolves.toEqual(roots)
+    // No payload fields: the probe lists the platform roots, nothing else.
+    expect(api.callsOf('host.listRoots')).toEqual([{}])
+    api.onListRoots = () => Promise.resolve(err({ code: 'directory-unreadable', message: 'probe failed', details: { path: '/' } }))
+    const probeFailure = workspaces.listDirectoryRoots()
+    await expect(probeFailure).rejects.toBeInstanceOf(DirectoryBrowseError)
+    await expect(probeFailure).rejects.toMatchObject({ rpcError: { code: 'directory-unreadable' } })
+  })
+
   it('opens a filesystem path through the host without local state', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

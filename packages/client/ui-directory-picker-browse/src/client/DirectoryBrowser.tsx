@@ -32,13 +32,19 @@
  * walks back up, moving the Miller view without leaving the editor. Panes the
  * draft walked to stay put when the editor closes (cancellation included):
  * the crumbs name where the walk ended, and Open's fallback target follows
- * them.
+ * them. A left navigation pane holds the Explorer-style directory tree: the
+ * platform roots (the Windows drives, the single POSIX root) probe on open,
+ * each node's children scan lazily on first expansion (a per-open cache that
+ * the show-hidden toggle filters on render), and a row click navigates the
+ * Miller view to that folder — the row holding the selection (else the
+ * listed level) stays lit.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCheckOutline16, IconChevronRightOutline14, IconEditOutline16, IconFolderClose16, IconFolderOpen16,
-  IconPlusOutline16, Modal,
+  Button, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconEditOutline16, IconFolderClose16,
+  IconFolderOpen16, IconPlusOutline16, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
 import { DirectoryBrowseError } from '@deepseek-ai/dsh-client-runtime/client'
@@ -51,6 +57,8 @@ export interface DirectoryBrowserProps {
   open: boolean
   /** List one directory level (absent path = the Host home directory); the signal aborts a superseded scan on the wire. */
   listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  /** List the platform root directories (the Windows drives, the single POSIX root); the signal retires the probe on close. */
+  listDirectoryRoots: (signal?: AbortSignal) => Promise<DirectoryEntry[]>
   /** Create one child directory under an existing parent. */
   createDirectory: (path: string, name: string) => Promise<string>
   /** The operator confirmed a directory (the selection, else the listed level). */
@@ -95,6 +103,24 @@ const PARENT_LEG_WAIT_MS = 200
  * a pause reads as "the list moved with me".
  */
 const DRAFT_PREVIEW_DEBOUNCE_MS = 250
+
+/** One expanded tree node's state; a settled node stays cached for the open. */
+type NavNode =
+  | { state: 'loading' }
+  | { state: 'error' }
+  | { state: 'ready'; entries: readonly DirectoryEntry[] }
+
+/**
+ * Indent by depth: the row's depth index picks its class and deeper paths
+ * hold the deepest indent (further nesting stops reading as structure).
+ */
+const NAV_DEPTH_CLASSES: readonly (string | undefined)[] = [
+  css.navDepth0, css.navDepth1, css.navDepth2, css.navDepth3,
+  css.navDepth4, css.navDepth5, css.navDepth6, css.navDepth7,
+]
+function navDepthClass(depth: number): string | undefined {
+  return NAV_DEPTH_CLASSES[Math.min(depth, NAV_DEPTH_CLASSES.length - 1)]
+}
 
 /**
  * Breadcrumb rows for display: inside the home subtree the chain starts at a
@@ -259,7 +285,16 @@ function LevelColumn({ entries, selectedPath, busy, onPick, showHidden, filterPr
  * @param props - owner-controlled browser props.
  * @returns the dialog element (null while closed, via Modal).
  */
-export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen, onClose, busy, t }: DirectoryBrowserProps) {
+export function DirectoryBrowser({
+  open,
+  listDirectory,
+  listDirectoryRoots,
+  createDirectory,
+  onOpen,
+  onClose,
+  busy,
+  t,
+}: DirectoryBrowserProps) {
   // Miller state: the listed level, the selected row in it, and the selected
   // folder's own listing (the right column; null while nothing is selected).
   const [parent, setParent] = useState<DirectoryListing | null>(null)
@@ -283,6 +318,15 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
   const [folderDraft, setFolderDraft] = useState<string | null>(null)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  // Left nav tree (per-open: the open effect resets every one of these). The
+  // roots probe once per open; each node's children scan on first expansion
+  // and stay cached until the dialog closes again.
+  const [navRoots, setNavRoots] = useState<DirectoryEntry[] | null>(null)
+  const [navRootError, setNavRootError] = useState<string | null>(null)
+  const [navNodes, setNavNodes] = useState<Record<string, NavNode>>({})
+  const [navExpanded, setNavExpanded] = useState<Record<string, boolean>>({})
+  const navRootsController = useRef<AbortController | null>(null)
+  const navNodeControllers = useRef(new Map<string, AbortController>())
   const requestSeq = useRef(0)
   // The in-flight listing's controller: superseding intent aborts the wire
   // request too — the Host stops scanning — instead of only discarding the
@@ -304,6 +348,8 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     requestSeq.current += 1
     openGeneration.current += 1
     scanController.current?.abort()
+    navRootsController.current?.abort()
+    for (const controller of navNodeControllers.current.values()) controller.abort()
   }, [])
   const compositionGuard = {
     onCompositionStart: () => { composingRef.current = true },
@@ -342,6 +388,61 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     restartSlowScanWindow()
     return listDirectory(path, controller.signal)
   }, [restartSlowScanWindow, listDirectory])
+
+  /** Probe the platform roots once per open; a close retires the probe in flight. */
+  const loadNavRoots = useCallback(() => {
+    const controller = new AbortController()
+    navRootsController.current = controller
+    const generation = openGeneration.current
+    setNavRoots(null)
+    setNavRootError(null)
+    listDirectoryRoots(controller.signal).then((roots) => {
+      if (generation !== openGeneration.current) return
+      setNavRoots(roots)
+    }, (reason: unknown) => {
+      if (generation !== openGeneration.current) return
+      // A close (or the unmount edge) already retired the tree; only a live
+      // probe failure earns the error line.
+      if (controller.signal.aborted) return
+      setNavRootError(failureText(reason))
+    })
+  }, [listDirectoryRoots])
+
+  /**
+   * Expand or collapse one tree node. First expansion scans the node's
+   * children once (a ready node re-expands from its cache, an erroled one
+   * retries); collapse aborts any in-flight scan and keeps the cache for the
+   * reopen. The node's controller is separate from the Miller scan: tree
+   * expansion never supersedes the listed view, and a navigation never kills
+   * a pending expansion.
+   */
+  const toggleNavNode = useCallback((entry: DirectoryEntry) => {
+    const path = entry.path
+    if (navExpanded[path] === true) {
+      navNodeControllers.current.get(path)?.abort()
+      navNodeControllers.current.delete(path)
+      setNavExpanded(prev => ({ ...prev, [path]: false }))
+      return
+    }
+    setNavExpanded(prev => ({ ...prev, [path]: true }))
+    const node = navNodes[path]
+    if (node !== undefined && node.state === 'ready') return
+    const controller = new AbortController()
+    navNodeControllers.current.set(path, controller)
+    setNavNodes(prev => ({ ...prev, [path]: { state: 'loading' } }))
+    const generation = openGeneration.current
+    listDirectory(path, controller.signal).then((listing) => {
+      if (generation !== openGeneration.current) return
+      navNodeControllers.current.delete(path)
+      setNavNodes(prev => ({ ...prev, [path]: { state: 'ready', entries: listing.entries } }))
+    }, () => {
+      if (generation !== openGeneration.current) return
+      navNodeControllers.current.delete(path)
+      // A collapse or a close aborted this scan: the state already moved on.
+      if (controller.signal.aborted) return
+      setNavNodes(prev => ({ ...prev, [path]: { state: 'error' } }))
+    })
+  }, [navExpanded, navNodes, listDirectory])
 
   /**
    * Enter owns the view from submission until its navigation lands, so the
@@ -570,7 +671,13 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
       setChild(null)
       setCreatingFolder(false)
       setShowHidden(false)
+      // The tree is per-open: a fresh root probe and a cleared node cache.
+      setNavRoots(null)
+      setNavRootError(null)
+      setNavNodes({})
+      setNavExpanded({})
       navigate()
+      loadNavRoots()
       return
     }
     supersede()
@@ -587,7 +694,13 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     // flags armed; retire them so a later render cannot consume them.
     refocusPick.current = false
     refocusEditZone.current = false
-  }, [open, navigate, supersede])
+    // The tree is per-open too: retire its probes so a late arrival cannot
+    // repopulate the tree after the dialog closes.
+    navRootsController.current?.abort()
+    navRootsController.current = null
+    for (const controller of navNodeControllers.current.values()) controller.abort()
+    navNodeControllers.current.clear()
+  }, [open, navigate, supersede, loadNavRoots])
 
   /** The folder a create or Open acts on: the selection, else the listed level. */
   const targetPath = selected?.path ?? parent?.path ?? null
@@ -748,6 +861,60 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
   // committing actions must not act on the previous selection/listing while
   // a different path is displayed.
   const draftPending = pathDraft !== null
+
+  // The lit nav row: the selection while it stands, else the listed level.
+  // Case-folded — a Windows path from a probe may spell the listed level's
+  // drive letter differently, and a row that never lights reads as broken.
+  const navActivePath = (selected?.path ?? parent?.path)?.toLowerCase() ?? null
+  // The nav rows: the roots plus each expanded node's children, walked in
+  // document order into a flat list (depth is visual indentation only, and
+  // a node's loading/error line seats under its own row).
+  const navRows: ReactElement[] = []
+  if (navRoots !== null) {
+    const walk = (entries: readonly DirectoryEntry[], depth: number): void => {
+      for (const entry of entries) {
+        if (!showHidden && entry.hidden) continue
+        const expanded = navExpanded[entry.path] === true
+        const node = navNodes[entry.path]
+        const active = navActivePath !== null && entry.path.toLowerCase() === navActivePath
+        // The seat is pushed before its children walk: the recursion appends
+        // to this same flat array, and JSX evaluates its children eagerly, so
+        // a call inside the element would seat the children ahead of the
+        // parent.
+        navRows.push(
+          <span key={entry.path} role="treeitem" aria-expanded={expanded || undefined} className={clsx(css.navRowSeat, navDepthClass(depth))}>
+            <button
+              type="button"
+              className={css.navChevron}
+              aria-label={expanded ? t('browser.nav.collapse', { name: entry.name }) : t('browser.nav.expand', { name: entry.name })}
+              disabled={parentInert}
+              onClick={() => { toggleNavNode(entry) }}
+            >
+              {expanded
+                ? <IconChevronDownOutline14 size={12} />
+                : <IconChevronRightOutline14 size={12} />}
+            </button>
+            <button
+              type="button"
+              className={clsx(css.navRow, active && css.navRowActive)}
+              aria-current={active || undefined}
+              disabled={parentInert}
+              onClick={() => { navigate(entry.path) }}
+            >
+              <IconFolderClose16 size={14} className={css.navRowIcon} />
+              <span className={css.navRowName}>{entry.name}</span>
+            </button>
+            {expanded && node !== undefined && node.state === 'loading'
+              && <span className={clsx(css.navStatus, navDepthClass(depth))} role="status">{t('browser.loading')}</span>}
+            {expanded && node !== undefined && node.state === 'error'
+              && <span className={clsx(css.navStatus, css.navErrorText, navDepthClass(depth))} role="alert">{t('browser.nav.nodeFailed')}</span>}
+          </span>,
+        )
+        if (expanded && node !== undefined && node.state === 'ready') walk(node.entries, depth + 1)
+      }
+    }
+    walk(navRoots, 0)
+  }
 
   return (
     <Modal
@@ -913,43 +1080,58 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
               )}
           </div>
         </div>
-        <div className={css.content}>
-          <div className={css.millerRow} ref={millerRowRef}>
-            {parent !== null && (
-              <LevelColumn
-                entries={parent.entries}
-                selectedPath={selected?.path ?? null}
-                busy={parentInert}
-                onPick={select}
-                showHidden={showHidden}
-                filterPrefix={child === null ? typedPrefix : null}
-                pathEditing={draftPending}
-              />
-            )}
-            {twoPane && <span className={css.divider} />}
-            {twoPane && child !== null && (
-              <LevelColumn
-                entries={child.entries}
-                selectedPath={null}
-                busy={parentInert}
-                onPick={advance}
-                showHidden={showHidden}
-                filterPrefix={typedPrefix}
-                pathEditing={draftPending}
-              />
-            )}
+        <div className={css.body}>
+          {/* The Explorer-style tree: platform roots on top, each node's
+              children scanned on first expansion. A row navigates; the
+              chevron only expands. */}
+          <div className={css.nav} aria-label={t('browser.nav.label')}>
+            <div className={css.navHeading}>{t('browser.nav.drives')}</div>
+            {navRoots === null && navRootError === null
+              && <div className={css.navStatus} role="status">{t('browser.loading')}</div>}
+            {navRootError !== null
+              && <div className={clsx(css.navStatus, css.navErrorText)} role="alert">{navRootError}</div>}
+            <div className={css.navList} role="tree">
+              {navRows}
+            </div>
           </div>
-          {loading && slowScan
-          && <div className={clsx(css.status, css.loadingFloat)} role="status">{t('browser.loading')}</div>}
-          {/* The backend bounds a level at its complete-result limit; say so
-          * whenever a visible pane was cut instead of letting the tail of a
-          * huge directory go silently missing. The note describes the panes
-          * on screen, so an in-flight scan leaves it alone — hiding it while
-          * the stale view still shows the cut level would shift the columns
-          * on every navigation away from it. */}
-          {(parent?.truncated === true || child?.truncated === true)
-          && <div className={css.status} role="status">{t('browser.truncated')}</div>}
-          {error !== null && <div className={css.error} role="alert">{error}</div>}
+          <div className={css.content}>
+            <div className={css.millerRow} ref={millerRowRef}>
+              {parent !== null && (
+                <LevelColumn
+                  entries={parent.entries}
+                  selectedPath={selected?.path ?? null}
+                  busy={parentInert}
+                  onPick={select}
+                  showHidden={showHidden}
+                  filterPrefix={child === null ? typedPrefix : null}
+                  pathEditing={draftPending}
+                />
+              )}
+              {twoPane && <span className={css.divider} />}
+              {twoPane && child !== null && (
+                <LevelColumn
+                  entries={child.entries}
+                  selectedPath={null}
+                  busy={parentInert}
+                  onPick={advance}
+                  showHidden={showHidden}
+                  filterPrefix={typedPrefix}
+                  pathEditing={draftPending}
+                />
+              )}
+            </div>
+            {loading && slowScan
+            && <div className={clsx(css.status, css.loadingFloat)} role="status">{t('browser.loading')}</div>}
+            {/* The backend bounds a level at its complete-result limit; say so
+            * whenever a visible pane was cut instead of letting the tail of a
+            * huge directory go silently missing. The note describes the panes
+            * on screen, so an in-flight scan leaves it alone — hiding it while
+            * the stale view still shows the cut level would shift the columns
+            * on every navigation away from it. */}
+            {(parent?.truncated === true || child?.truncated === true)
+            && <div className={css.status} role="status">{t('browser.truncated')}</div>}
+            {error !== null && <div className={css.error} role="alert">{error}</div>}
+          </div>
         </div>
         <div className={css.footerBar}>
           <Button

@@ -2,12 +2,12 @@
 
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, win32 } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import type { DirectoryPickerBrowseCapability } from '@deepseek-ai/dsh-host-directory-picker'
-import BrowseDirectoryPicker, { boundedInsert, fullyQualified, raceAbort } from '../src/index.ts'
+import BrowseDirectoryPicker, { boundedInsert, filesystemRoots, fullyQualified, raceAbort } from '../src/index.ts'
 import type { ListingCandidate } from '../src/index.ts'
 
 let root: string
@@ -108,6 +108,33 @@ describe('BrowseDirectoryPicker', () => {
     expect((failure as DirectoryPickerError).code).toBe('directory-unreadable')
   })
 
+  it('probes the platform roots and returns the existing directories, each naming its full path', async () => {
+    const roots = await capability.listRoots()
+    // A root names itself by its full path (the breadcrumb root convention), never hidden.
+    expect(roots.every(entry => entry.name === entry.path && entry.hidden === false)).toBe(true)
+    if (process.platform === 'win32') {
+      // The drive holding this temp tree is a real, existing drive root; absent
+      // or inaccessible drives are omitted by their failed stat, not an error.
+      expect(roots.map(entry => entry.path)).toContain(win32.parse(root).root)
+      expect(roots.length).toBeGreaterThanOrEqual(1)
+      expect(roots.length).toBeLessThanOrEqual(26)
+    } else {
+      // POSIX has one root, and it always exists.
+      expect(roots).toEqual([{ name: '/', path: '/', hidden: false }])
+    }
+  })
+
+  it('stops the root probe with the caller: an aborted signal rejects with its own reason', async () => {
+    const gone = new AbortController()
+    gone.abort(new Error('caller left'))
+    // The abort surfaces as-is, not dressed as a missing drive.
+    await expect(capability.listRoots(gone.signal)).rejects.toThrow('caller left')
+    // A live signal leaves the probe untouched.
+    const live = new AbortController()
+    const roots = await capability.listRoots(live.signal)
+    expect(roots.length).toBeGreaterThanOrEqual(1)
+  })
+
   it('raceAbort follows the operation until the signal wins, and swallows the abandoned settlement', async () => {
     // No signal / settled operations: plain passthrough, listener removed.
     await expect(raceAbort(Promise.resolve('ok'), undefined)).resolves.toBe('ok')
@@ -190,6 +217,19 @@ describe('BrowseDirectoryPicker', () => {
     expect(fullyQualified('\\\\', 'win32')).toBe(false)
     expect(fullyQualified('\\\\server', 'win32')).toBe(false)
     expect(fullyQualified('\\\\server\\', 'win32')).toBe(false)
+  })
+
+  it('names the candidate roots per platform: 26 drive roots on Windows, the single POSIX root elsewhere', () => {
+    const windows = filesystemRoots('win32')
+    expect(windows).toHaveLength(26)
+    expect(windows[0]).toBe('A:\\')
+    expect(windows[25]).toBe('Z:\\')
+    // Letter order, drive-qualified — each a probe target, not a presence claim.
+    expect(windows.every((root, i) => root === `${String.fromCharCode(65 + i)}:\\`)).toBe(true)
+    // POSIX platforms share the single root; Node ships win32 and POSIX only,
+    // so every non-win32 argument lands there.
+    expect(filesystemRoots('linux')).toEqual(['/'])
+    expect(filesystemRoots('darwin')).toEqual(['/'])
   })
 
   it('rejects non-absolute paths instead of rebasing them under the process cwd', async () => {

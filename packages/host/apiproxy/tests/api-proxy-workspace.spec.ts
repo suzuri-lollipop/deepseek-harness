@@ -158,9 +158,10 @@ describe('host.pickDirectory', () => {
   })
 })
 
-/** Canned browse capability: one listing, one created path, typed failures on demand. */
+/** Canned browse capability: one root, one listing, one created path, typed failures on demand. */
 const BROWSE_STUB: DirectoryPickerCapability = {
   kind: 'browse',
+  listRoots: async () => [{ name: '/', path: '/', hidden: false }],
   list: async (path) => {
     if (path === '/denied') throw new DirectoryPickerError('directory-unreadable', '/denied', 'cannot list /denied')
     const target = path ?? '/home/user'
@@ -206,6 +207,7 @@ describe('host.listDirectory / host.createDirectory', () => {
   it('reports an aborted listing as cancelled, like the other signal-following RPCs', async () => {
     const { api } = await harness(undefined, {
       kind: 'browse',
+      listRoots: async () => [],
       list: (_path, signal) => new Promise((_resolve, reject) => {
         signal?.addEventListener('abort', () => { reject(new Error('scan aborted')) }, { once: true })
       }),
@@ -223,6 +225,50 @@ describe('host.listDirectory / host.createDirectory', () => {
       ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
     })
     expect((await api.host.createDirectory(request({ path: '/x', name: 'y' }))).result).toMatchObject({
+      ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
+    })
+  })
+})
+
+describe('host.listRoots', () => {
+  it('serves the probe results through the browse capability', async () => {
+    const { api } = await harness(undefined, BROWSE_STUB)
+    const roots = await api.host.listRoots(request({}), new AbortController().signal)
+    expect(roots.result).toEqual({ ok: true, value: { roots: [{ name: '/', path: '/', hidden: false }] } })
+  })
+
+  it('maps typed probe failures onto the wire error codes and folds unknown throws to internal', async () => {
+    const { api } = await harness(undefined, {
+      kind: 'browse',
+      listRoots: async () => {
+        throw new DirectoryPickerError('directory-unreadable', '/', 'cannot probe the roots')
+      },
+      list: async () => { throw new Error('unreached') },
+      createDirectory: async () => '/unreached',
+    })
+    expect((await api.host.listRoots(request({}), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'directory-unreadable', details: { path: '/' } },
+    })
+  })
+
+  it('reports an aborted probe as cancelled, like the other signal-following RPCs', async () => {
+    const { api } = await harness(undefined, {
+      kind: 'browse',
+      listRoots: signal => new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => { reject(new Error('probe aborted')) }, { once: true })
+      }),
+      list: async () => { throw new Error('unreached') },
+      createDirectory: async () => '/unreached',
+    })
+    const abort = new AbortController()
+    const pending = api.host.listRoots(request({}), abort.signal)
+    abort.abort()
+    expect((await pending).result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
+  })
+
+  it('refuses the probe RPC under a native composition', async () => {
+    const { api } = await harness()
+    expect((await api.host.listRoots(request({}), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'directory-picker-unavailable', details: { capability: 'native' } },
     })
   })

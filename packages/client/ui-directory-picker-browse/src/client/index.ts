@@ -2,10 +2,11 @@
  * Browser half of the browse directory-picker backend: fills ui-workspace's
  * two directory-flow holes with the in-app Select Workspace Directory dialog
  * (figma `Harness` 813-23126 family), driving the node half's
- * `host.listDirectory`/`host.createDirectory` primitives. Mounting this
- * package therefore composes both sides of the browse interaction with one
- * cordis.yml row; no client code branches on a capability kind. The dialog's
- * copy is locale-registered here — the flow package owns its own strings.
+ * `host.listDirectory`, `host.listRoots`, and `host.createDirectory`
+ * primitives. Mounting this package therefore composes both sides of the
+ * browse interaction with one cordis.yml row; no client code branches on a
+ * capability kind. The dialog's copy is locale-registered here — the flow
+ * package owns its own strings.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the SlotMap merge declaring the directory-flow holes.
@@ -46,6 +47,11 @@ export function apply(ctx: ClientContext): void {
         'browser.loading': '加载中…',
         'browser.truncated': '文件夹过多，仅显示开头部分。',
         'browser.showHidden': '显示隐藏文件',
+        'browser.nav.label': '驱动器',
+        'browser.nav.drives': '驱动器',
+        'browser.nav.expand': '展开 "{name}"',
+        'browser.nav.collapse': '收起 "{name}"',
+        'browser.nav.nodeFailed': '无法打开该文件夹',
       }],
       ['en', {
         'browser.title': 'Select Workspace Directory',
@@ -61,6 +67,11 @@ export function apply(ctx: ClientContext): void {
         'browser.loading': 'Loading…',
         'browser.truncated': 'Too many folders to list; only the beginning is shown.',
         'browser.showHidden': 'Show hidden files',
+        'browser.nav.label': 'Drives',
+        'browser.nav.drives': 'Drives',
+        'browser.nav.expand': 'Expand "{name}"',
+        'browser.nav.collapse': 'Collapse "{name}"',
+        'browser.nav.nodeFailed': "Couldn't open this folder",
       }],
     ]
     try {
@@ -74,6 +85,7 @@ export function apply(ctx: ClientContext): void {
 
   const injected = (): BrowseFlowInjected => ({
     listDirectory: (path, signal) => ctx.workspaces.listDirectory(path, signal),
+    listDirectoryRoots: signal => ctx.workspaces.listDirectoryRoots(signal),
     createDirectory: (path, name) => ctx.workspaces.createDirectory(path, name),
     t: ctx.locale.bind(LOCALE_NS),
   })

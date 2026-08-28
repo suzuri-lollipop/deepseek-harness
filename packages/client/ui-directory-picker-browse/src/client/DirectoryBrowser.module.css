@@ -187,6 +187,143 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Body row: the fixed nav pane left of the Miller content; the card's
+ * column stays flex, .body takes the room header and footer leave. */
+.body {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Explorer-style left tree: fixed width, scrolls on its own, an l3 rule
+ * separates it from the Miller panes. */
+.nav {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 200px;
+  min-height: 0;
+  border-right: 1px solid var(--dsw-alias-border-l3);
+}
+
+.navHeading {
+  flex: none;
+  padding: 10px 12px 4px 16px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-caption);
+}
+
+.navList {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4px 8px 0;
+}
+
+/* Row seats: the chevron and the row button share one indented row; the
+ * depth class sets the indent, and a node's status line reuses it. */
+.navRowSeat {
+  display: flex;
+  align-items: center;
+}
+
+/* Depth indent: the tree walk's depth index picks the class, and deeper
+ * nesting holds the deepest step. */
+.navDepth0 { padding-left: 4px; }
+.navDepth1 { padding-left: 16px; }
+.navDepth2 { padding-left: 28px; }
+.navDepth3 { padding-left: 40px; }
+.navDepth4 { padding-left: 52px; }
+.navDepth5 { padding-left: 64px; }
+.navDepth6 { padding-left: 76px; }
+.navDepth7 { padding-left: 88px; }
+
+.navChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.navChevron:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.navChevron:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.navRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px 0 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.navRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The lit row: the selection (else the listed level), pill fill + the
+ * folder glyph in the info accent (the Miller row's selected vocabulary). */
+.navRowActive,
+.navRowActive:hover {
+  background: var(--dsw-alias-interactive-bg-active, var(--dsw-alias-interactive-bg-hover));
+}
+
+.navRowIcon {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.navRowActive .navRowIcon {
+  color: var(--dsw-alias-button-info-fill);
+}
+
+.navRowName {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* A node's loading/error line seats under its row text (the chevron's 18px
+ * plus the row's own start clearance). */
+.navStatus {
+  margin-left: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.navErrorText {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 /* Miller content: symmetric 16px vertical padding so the divider clears the
  * header and footer rules evenly; each column scrolls alone (column widths
  * live at .column). */

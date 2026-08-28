@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
 import { DirectoryBrowseError } from '@deepseek-ai/dsh-client-runtime/client'
 import { DirectoryBrowser } from '../src/client/DirectoryBrowser.tsx'
 
@@ -88,12 +88,16 @@ function listingFor(path?: string): DirectoryListing {
 
 function mount(overrides: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) {
   const listDirectory = vi.fn(async (path?: string) => listingFor(path))
+  const listDirectoryRoots = vi.fn(async (): Promise<DirectoryEntry[]> => [
+    { name: '/', path: '/', hidden: false },
+  ])
   const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
   const onOpen = vi.fn()
   const onClose = vi.fn()
   const props = {
     open: true,
     listDirectory,
+    listDirectoryRoots,
     createDirectory,
     onOpen,
     onClose,
@@ -102,7 +106,7 @@ function mount(overrides: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) 
     ...overrides,
   }
   const view = render(<DirectoryBrowser {...props} />)
-  return { view, props, listDirectory, createDirectory, onOpen, onClose }
+  return { view, props, listDirectory, listDirectoryRoots, createDirectory, onOpen, onClose }
 }
 
 /** The rendered level columns, left-to-right. */
@@ -130,7 +134,9 @@ describe('DirectoryBrowser', () => {
     expect(screen.getByRole('listitem').textContent).toBe('Documents')
     expect(screen.queryByText('.config')).toBeNull()
     expect(screen.getByRole('button', { name: 'browser.home' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '/' })).toBeNull()
+    // The crumb trail roots at Home (no filesystem-root crumb); the nav
+    // tree's root row is a different button.
+    expect(within(screen.getByRole('navigation')).queryByRole('button', { name: '/' })).toBeNull()
   })
 
   it('shows hidden entries when the toggle is on and hides them again on close', async () => {
@@ -1222,7 +1228,9 @@ describe('DirectoryBrowser', () => {
     }
     mount({ listDirectory: vi.fn(async () => outside) })
     await waitFor(() => { expect(screen.getByRole('button', { name: 'data' })).toBeTruthy() })
-    expect(screen.getByRole('button', { name: '/' })).toBeTruthy()
+    // The full chain lives in the crumb trail (the nav tree holds only the
+    // probe's roots, which never expand here).
+    expect(within(screen.getByRole('navigation')).getByRole('button', { name: '/' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'browser.home' })).toBeNull()
   })
 
@@ -1748,5 +1756,250 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => { expect(screen.getByRole('listitem').textContent).toBe('Documents') })
     expect(columns()).toHaveLength(1)
     expect(b.listDirectory).toHaveBeenLastCalledWith(undefined, expect.any(AbortSignal))
+  })
+})
+
+describe('DirectoryBrowser left nav tree', () => {
+  const NAV_HOME = '/home/u'
+
+  /**
+   * Nav-tree fixture: the root holds home plus a hidden sibling, so the
+   * walk, the hidden filter, and the lit-row rule each have their own
+   * landing.
+   */
+  function navListingFor(path?: string): DirectoryListing {
+    const asked = path ?? NAV_HOME
+    const target = asked.length > 1 && asked.endsWith('/') ? asked.slice(0, -1) : asked
+    const tree: Record<string, DirectoryListing> = {
+      [NAV_HOME]: {
+        path: NAV_HOME,
+        home: NAV_HOME,
+        crumbs: [
+          { name: '/', path: '/', hidden: false },
+          { name: 'home', path: '/home', hidden: false },
+          { name: 'u', path: NAV_HOME, hidden: false },
+        ],
+        entries: [],
+        truncated: false,
+      },
+      '/': {
+        path: '/',
+        home: NAV_HOME,
+        crumbs: [{ name: '/', path: '/', hidden: false }],
+        entries: [
+          { name: 'home', path: '/home', hidden: false },
+          { name: 'srv', path: '/srv', hidden: true },
+        ],
+        truncated: false,
+      },
+      '/home': {
+        path: '/home',
+        home: NAV_HOME,
+        crumbs: [
+          { name: '/', path: '/', hidden: false },
+          { name: 'home', path: '/home', hidden: false },
+        ],
+        entries: [{ name: 'u', path: NAV_HOME, hidden: false }],
+        truncated: false,
+      },
+    }
+    const found = tree[target]
+    if (found === undefined) {
+      throw new DirectoryBrowseError({ code: 'directory-unreadable', message: `cannot list ${target}`, details: { path: target } })
+    }
+    return found
+  }
+
+  function mountNav(overrides: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) {
+    const listDirectory = vi.fn(async (path?: string) => navListingFor(path))
+    const listDirectoryRoots = vi.fn(async (_signal?: AbortSignal): Promise<DirectoryEntry[]> => [
+      { name: '/', path: '/', hidden: false },
+    ])
+    const onOpen = vi.fn()
+    const onClose = vi.fn()
+    const props = {
+      open: true,
+      listDirectory,
+      listDirectoryRoots,
+      createDirectory: vi.fn(async (path: string, name: string) => `${path}/${name}`),
+      onOpen,
+      onClose,
+      busy: false,
+      t: (key: string, params?: Record<string, unknown>) => (params === undefined ? key : `${key}:${String(params.name)}`),
+      ...overrides,
+    }
+    const view = render(<DirectoryBrowser {...props} />)
+    // The props the component actually received (an override wins over the
+    // default fake), so the assertions hit the spies the dialog sees; the
+    // spies are the same vi.fn()s, only the props widen them to plain functions.
+    return {
+      view,
+      props,
+      listDirectory: props.listDirectory as typeof listDirectory,
+      listDirectoryRoots: props.listDirectoryRoots as typeof listDirectoryRoots,
+      onOpen,
+      onClose,
+    }
+  }
+
+  /** The tree's seats in walk order (a flat DFS: roots, then expanded children). */
+  function navSeats(): HTMLElement[] {
+    return within(screen.getByRole('tree')).getAllByRole('treeitem')
+  }
+  /** A seat's two buttons: [chevron, row]. */
+  function seatButtons(seat: HTMLElement): [HTMLButtonElement, HTMLButtonElement] {
+    return within(seat).getAllByRole('button') as [HTMLButtonElement, HTMLButtonElement]
+  }
+  const navChevron = (index: number): HTMLButtonElement => seatButtons(navSeats()[index]!)[0]
+  const navRow = (index: number): HTMLButtonElement => seatButtons(navSeats()[index]!)[1]
+
+  it('probes the platform roots on open and renders them as the tree top', async () => {
+    const b = mountNav()
+    expect(b.listDirectoryRoots).toHaveBeenCalledTimes(1)
+    expect(b.listDirectoryRoots).toHaveBeenCalledWith(expect.any(AbortSignal))
+    // The tree frame stands while the probe runs (loading line, no rows).
+    expect(screen.getByRole('tree')).toBeTruthy()
+    await waitFor(() => { expect(navSeats()).toHaveLength(1) })
+    expect(navSeats()[0]!.getAttribute('aria-expanded')).toBeNull()
+    expect(navChevron(0).getAttribute('aria-label')).toBe('browser.nav.expand:/')
+    expect(navRow(0).textContent).toBe('/')
+  })
+
+  it('expands a node lazily, hides hidden children, and re-expands from cache', async () => {
+    const b = mountNav()
+    await screen.findByRole('tree')
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(2) })
+    expect(b.listDirectory).toHaveBeenLastCalledWith('/', expect.any(AbortSignal))
+    expect(navSeats()[0]!.getAttribute('aria-expanded')).toBe('true')
+    expect(navChevron(0).getAttribute('aria-label')).toBe('browser.nav.collapse:/')
+    // The hidden sibling stays hidden while the toggle is off.
+    expect(within(screen.getByRole('tree')).queryByText('srv')).toBeNull()
+    // Collapse keeps the cache; re-expanding renders it without a new scan.
+    const scans = b.listDirectory.mock.calls.filter(call => call[0] === '/').length
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(1) })
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(2) })
+    expect(b.listDirectory.mock.calls.filter(call => call[0] === '/')).toHaveLength(scans)
+    // The hidden filter is a render concern: the toggle reveals the cached
+    // child without a re-scan.
+    fireEvent.click(screen.getByRole('button', { name: 'browser.showHidden' }))
+    expect(within(screen.getByRole('tree')).getByText('srv')).toBeTruthy()
+    expect(b.listDirectory.mock.calls.filter(call => call[0] === '/')).toHaveLength(scans)
+  })
+
+  it('aborts an in-flight node scan on collapse and keeps the late result for the cache', async () => {
+    const signals: (AbortSignal | undefined)[] = []
+    let release!: (listing: DirectoryListing) => void
+    const listDirectory = vi.fn((path?: string, signal?: AbortSignal) => {
+      if (path === '/') {
+        signals.push(signal)
+        return new Promise<DirectoryListing>((resolve) => { release = resolve })
+      }
+      return Promise.resolve(navListingFor(path))
+    })
+    mountNav({ listDirectory })
+    await screen.findByRole('tree')
+    fireEvent.click(navChevron(0))
+    // The node's loading line seats under its own row.
+    await waitFor(() => { expect(within(navSeats()[0]!).getByRole('status').textContent).toBe('browser.loading') })
+    fireEvent.click(navChevron(0))
+    expect(signals[0]?.aborted).toBe(true)
+    release(navListingFor('/'))
+    await new Promise(settle => setTimeout(settle, 0))
+    // The collapsed node did not pop open with its late children...
+    expect(navSeats()).toHaveLength(1)
+    // ...but the result filled the cache: the re-expansion needs no scan.
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(2) })
+    expect(signals).toHaveLength(1)
+  })
+
+  it('marks an unreadable node as failed and retries on re-expand', async () => {
+    let slashScans = 0
+    const listDirectory = vi.fn(async (path?: string) => {
+      if (path === '/') {
+        slashScans += 1
+        if (slashScans === 1) {
+          throw new DirectoryBrowseError({ code: 'directory-unreadable', message: 'cannot list /', details: { path: '/' } })
+        }
+      }
+      return navListingFor(path)
+    })
+    mountNav({ listDirectory })
+    await screen.findByRole('tree')
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(within(navSeats()[0]!).getByRole('alert').textContent).toBe('browser.nav.nodeFailed') })
+    // Collapse, then re-expand: the erroled node re-scans and recovers.
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(1) })
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(2) })
+    expect(slashScans).toBe(2)
+  })
+
+  it('navigates the Miller view from a row click and lights the row', async () => {
+    mountNav()
+    await screen.findByRole('tree')
+    // No tree row holds home or the root's parent: nothing is lit yet.
+    expect(navRow(0).getAttribute('aria-current')).toBeNull()
+    fireEvent.click(navRow(0))
+    await waitFor(() => { expect(screen.getByRole('listitem').textContent).toBe('home') })
+    // The listed level is the root: the root row lights.
+    expect(navRow(0).getAttribute('aria-current')).toBe('true')
+    // Expand and pick home in the Miller: the lit row moves to the selection.
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(2) })
+    fireEvent.click(rowButton(screen.getByRole('listitem')))
+    await waitFor(() => { expect(columns()).toHaveLength(2) })
+    expect(navRow(0).getAttribute('aria-current')).toBeNull()
+    expect(navRow(1).getAttribute('aria-current')).toBe('true')
+  })
+
+  it('lights the listed level when nothing is selected', async () => {
+    mountNav()
+    await screen.findByRole('tree')
+    // Open the tree down to home so the lit target has a row.
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(2) })
+    fireEvent.click(navChevron(1))
+    await waitFor(() => { expect(navSeats()).toHaveLength(3) })
+    // Walk back to home (a single wide pane, no selection): the home row —
+    // the listed level — lights.
+    fireEvent.click(screen.getByRole('button', { name: 'browser.home' }))
+    await waitFor(() => { expect(columns()).toHaveLength(1) })
+    expect(navRow(2).textContent).toBe('u')
+    expect(navRow(2).getAttribute('aria-current')).toBe('true')
+    expect(navRow(0).getAttribute('aria-current')).toBeNull()
+    expect(navRow(1).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('resets the tree on close and re-probes on reopen', async () => {
+    const b = mountNav()
+    await screen.findByRole('tree')
+    fireEvent.click(navChevron(0))
+    await waitFor(() => { expect(navSeats()).toHaveLength(2) })
+    const rootSignal = (b.listDirectoryRoots.mock.calls[0] as [AbortSignal])[0]
+    b.view.rerender(<DirectoryBrowser {...b.props} open={false} />)
+    expect(rootSignal.aborted).toBe(true)
+    b.view.rerender(<DirectoryBrowser {...b.props} open />)
+    expect(b.listDirectoryRoots).toHaveBeenCalledTimes(2)
+    // The expansion state did not survive the close: the fresh probe shows
+    // the collapsed root alone.
+    await waitFor(() => { expect(navSeats()).toHaveLength(1) })
+    expect(navSeats()[0]!.getAttribute('aria-expanded')).toBeNull()
+  })
+
+  it('surfaces a root-probe failure as an alert in the pane', async () => {
+    const listDirectoryRoots = vi.fn(async () => {
+      throw new DirectoryBrowseError({ code: 'directory-unreadable', message: 'cannot list roots', details: { path: '/' } })
+    })
+    const b = mountNav({ listDirectoryRoots })
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('cannot list roots')
+    })
+    expect(within(screen.getByRole('tree')).queryAllByRole('treeitem')).toHaveLength(0)
+    expect(b.listDirectoryRoots).toHaveBeenCalledTimes(1)
   })
 })

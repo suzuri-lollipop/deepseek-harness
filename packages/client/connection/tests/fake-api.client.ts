@@ -82,6 +82,8 @@ export class FakeApiClient implements IApiClient {
     }))
   onPickDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string | null }>> =
     () => Promise.resolve(ok({ path: null }))
+  onListRoots: (payload: unknown) => Promise<RpcResponse<{ roots: { name: string; path: string; hidden: boolean }[] }>> =
+    () => Promise.resolve(ok({ roots: [{ name: '/', path: '/', hidden: false }] }))
   onOpenPath: (payload: unknown) => Promise<RpcResponse<{ opened: true }>> =
     () => Promise.resolve(ok({ opened: true as const }))
 
@@ -144,6 +146,7 @@ export class FakeApiClient implements IApiClient {
   readonly host: IApiClient['host'] = {
     describe: payload => this.record('host.describe', payload, this.onDescribe(payload)),
     pickDirectory: payload => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
+    listRoots: payload => this.record('host.listRoots', payload, this.onListRoots(payload)),
     listDirectory: payload => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: payload => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
     openPath: payload => this.record('host.openPath', payload, this.onOpenPath(payload)),

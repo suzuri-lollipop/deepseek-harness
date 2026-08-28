@@ -64,6 +64,16 @@ export interface HostApi {
   ): Promise<RpcResponse<{ path: string | null }>>
 
   /**
+   * Enumerate the host's filesystem roots (drive roots on Windows, the single
+   * root on POSIX) for the in-app browser's navigation tree. Only served
+   * under the `browse` capability; absent or inaccessible drives are omitted.
+   */
+  listRoots(
+    request: RpcRequest<{}>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<{ roots: DirectoryEntry[] }>>
+
+  /**
    * List one directory level for the in-app browser; an absent path lists the
    * host account's home directory. Only served under the `browse` capability;
    * unreadable or missing targets fail with `directory-unreadable`. The

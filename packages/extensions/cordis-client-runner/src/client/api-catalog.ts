@@ -331,6 +331,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the level\'s listing with breadcrumb ancestry.',
       },
       {
+        signature: 'listDirectoryRoots(signal?: AbortSignal): Promise<DirectoryEntry[]>',
+        description: 'Enumerate the Host\'s filesystem roots (drive roots on Windows, the single root on POSIX) through the Host\'s `browse` capability.',
+        parameters: [{ name: 'signal', description: 'aborts the wire request (and the Host\'s probe) when the caller supersedes it.' }],
+        returns: 'the present roots in platform order; absent or inaccessible drives are omitted.',
+      },
+      {
         signature: 'createDirectory(path: string, name: string): Promise<string>',
         description: 'Create one child directory through the Host\'s `browse` capability.',
         parameters: [{ name: 'path', description: 'absolute existing parent directory.' }, { name: 'name', description: 'single non-blank path segment.' }],

@@ -63,6 +63,16 @@ export interface DirectoryListing {
 export interface DirectoryPickerBrowseCapability {
   kind: 'browse'
   /**
+   * Enumerate the platform's filesystem roots — the drive roots on Windows,
+   * the single root on POSIX — the starting points a browser navigation tree
+   * offers beside the home directory.
+   * @param signal - caller lifetime; abort rejects with the abort reason.
+   * @returns the present roots in platform order (drive-letter order on
+   * Windows), each a jump target; a root whose probe fails (an absent or
+   * inaccessible drive) is omitted.
+   */
+  listRoots(signal?: AbortSignal): Promise<DirectoryEntry[]>
+  /**
    * List one directory level.
    * @param path - absolute directory to list; absent lists the home directory.
    * @param signal - caller lifetime; abort stops the scan (a stalled network

@@ -90,11 +90,17 @@
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
 
-    # Resolve bind host, SSH launch, and display once at boot, then mount the
-    # matching dual-face directory picker. Mount -native or -browse directly in
-    # an overlay to pin the interaction.
+    # Adaptive directory-picker chooser: one boot-time resolution of the bind
+    # host, the SSH launch, the named remote-browser authorities, and the
+    # display facts mounts the matching dual-face directory picker. Mount
+    # -native or -browse directly in an overlay to pin the interaction.
     - id: directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
+      inject: [webStartup]
+      config:
+        # An explicit authority admits a browser the OS chooser cannot reach,
+        # the same remote signal as an all-interfaces bind.
+        trustedHosts: !!js ctx.webStartup.trustedHosts
 
     # Read-only projection of current Loader entries for trusted client RPCs.
     - id: plugin-inventory

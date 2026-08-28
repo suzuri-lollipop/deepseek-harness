@@ -6,6 +6,14 @@
     - button "browse-golden"
   - button "Edit path":
     - img
+  - text: Drives
+  - tree:
+    - treeitem "Expand \"/\" /":
+      - button "Expand \"/\"":
+        - img
+      - button /:
+        - img
+        - text: /
   - list:
     - listitem:
       - button "adopted":

@@ -90,7 +90,7 @@ afterEach(async () => {
 /** Write a two-row cordis.yml (webserver + chooser), then boot it through the real Loader. */
 async function loadComposition(
   bindHost: '127.0.0.1' | '0.0.0.0',
-  options: { failSurface?: boolean } = {},
+  options: { failSurface?: boolean; trustedHosts?: string[] } = {},
 ): Promise<{ ctx: Context; configPath: string }> {
   root = await mkdtemp(join(tmpdir(), 'dsh-directory-picker-auto-'))
   const configPath = join(root, 'cordis.yml')
@@ -100,6 +100,9 @@ async function loadComposition(
     `    host: '${bindHost}'`,
     '    port: 0',
     `- name: '${AUTO}'`,
+    ...(options.trustedHosts !== undefined
+      ? ['  config:', `    trustedHosts: ${JSON.stringify(options.trustedHosts)}`]
+      : []),
     '',
   ].join('\n'))
 
@@ -216,6 +219,18 @@ describe('real Loader composition', () => {
     expect(entryNames(ctx)).toContain(BROWSE_SURFACE)
     expect(entryNames(ctx)).not.toContain(NATIVE)
     expect(entryNames(ctx)).not.toContain(NATIVE_SURFACE)
+  })
+
+  it('mounts the browse backend on a loopback bind when the launch names a trusted-host authority', { timeout: 60_000 }, async () => {
+    stubAttendedHost()
+    const { ctx } = await loadComposition('127.0.0.1', { trustedHosts: ['server-4.tail82719.ts.net'] })
+
+    expect(entryNames(ctx)).toContain(BROWSE)
+    expect(entryNames(ctx)).toContain(BROWSE_SURFACE)
+    expect(entryNames(ctx)).not.toContain(NATIVE)
+    expect(entryNames(ctx)).not.toContain(NATIVE_SURFACE)
+    const picker = ctx.get('directoryPicker') as DirectoryPicker
+    expect(picker.capability().kind).toBe('browse')
   })
 
   it('unmounts the backend when the surface entry fails to load', { timeout: 60_000 }, async () => {

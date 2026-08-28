@@ -546,6 +546,14 @@ describe('createFixtureApi', () => {
     expect(root.result.value.entries).toContainEqual({ name: 'srv', path: '/srv', hidden: false })
   })
 
+  it('listRoots serves the fixture tree single root', async () => {
+    const api = createFixtureApi()
+    const response = await api.host.listRoots(req({}), new AbortController().signal)
+    expect(response.result).toEqual({
+      ok: true, value: { roots: [{ name: '/', path: '/', hidden: false }] },
+    })
+  })
+
   it('workspace.list serves the resident account and create reuses on path collision', async () => {
     const api = createFixtureApi()
     const listed = await api.workspace.list(req({}))

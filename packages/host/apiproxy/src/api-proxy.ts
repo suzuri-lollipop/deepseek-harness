@@ -2867,6 +2867,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
       },
 
+      async listRoots(request, signal) {
+        const capability = ctx.directoryPicker.capability()
+        if (capability.kind !== 'browse') {
+          return err(request, {
+            code: 'directory-picker-unavailable',
+            message: `host.listRoots needs the browse capability; the composed picker serves "${capability.kind}"`,
+            details: { capability: capability.kind },
+          })
+        }
+        try {
+          // The carrier's signal follows the caller: a disconnect or timeout
+          // stops the backend's root probes instead of outliving it.
+          return ok(request, { roots: await capability.listRoots(signal) })
+        } catch (error: unknown) {
+          // An abort is the caller's own timeout/disconnect, not a server
+          // failure — same code pickDirectory and command.execute report.
+          if (signal.aborted) {
+            return err(request, { code: 'cancelled', message: 'directory root probe was aborted', details: {} })
+          }
+          return err(request, directoryError(error))
+        }
+      },
+
       async listDirectory(request, signal) {
         const capability = ctx.directoryPicker.capability()
         if (capability.kind !== 'browse') {

@@ -2623,6 +2623,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       // pick-then-adopt path without an OS chooser (design-mock content,
       // same tree the browse primitives serve).
       pickDirectory: request => ok(request, { path: `${FIXTURE_HOME}/Documents/project` }),
+      // The fixture tree is a single-root POSIX tree: one root row.
+      listRoots: request => ok(request, { roots: [{ name: '/', path: '/', hidden: false }] }),
       listDirectory: (request) => {
         const target = request.payload.path ?? FIXTURE_HOME
         const children = childrenOf(target)
@@ -3193,6 +3195,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'subagent.interrupt': return this.api.subagents.interrupt(request)
       case 'host.describe': return this.api.host.describe(request)
       case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
+      case 'host.listRoots': return this.api.host.listRoots(request, new AbortController().signal)
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)

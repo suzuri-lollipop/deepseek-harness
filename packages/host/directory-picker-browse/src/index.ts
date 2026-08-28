@@ -53,6 +53,23 @@ export function fullyQualified(path: string, platform: NodeJS.Platform = process
     : posix.isAbsolute(path)
 }
 
+/**
+ * Candidate filesystem roots of the platform: the 26 drive roots in
+ * letter order on Windows, the single root everywhere else (Node ships for
+ * win32 and the POSIX platforms only). Candidates are probes, not a presence
+ * claim: an absent or inaccessible drive's failed stat omits it.
+ * @param platform - replaces `process.platform` for deterministic tests.
+ * @returns the candidate root paths, fully qualified.
+ */
+export function filesystemRoots(platform: NodeJS.Platform = process.platform): string[] {
+  if (platform === 'win32') {
+    const roots: string[] = []
+    for (let code = 65; code <= 90; code += 1) roots.push(`${String.fromCharCode(code)}:\\`)
+    return roots
+  }
+  return ['/']
+}
+
 /** One streamed listing candidate: the dirent facts a row needs, nothing else retained. */
 export interface ListingCandidate {
   /** Base name within the streamed level. */
@@ -198,6 +215,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
 
   private readonly browseCapability: DirectoryPickerCapability = {
     kind: 'browse',
+    listRoots: signal => this.listRoots(signal),
     list: (path, signal) => this.list(path, signal),
     createDirectory: (path, name) => this.createDirectory(path, name),
   }
@@ -212,6 +230,22 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
    */
   capability(): DirectoryPickerCapability {
     return this.browseCapability
+  }
+
+  private async listRoots(signal?: AbortSignal): Promise<DirectoryEntry[]> {
+    const roots: DirectoryEntry[] = []
+    for (const root of filesystemRoots()) {
+      try {
+        // The probe races the caller like every other filesystem step.
+        if (!(await raceAbort(stat(root), signal)).isDirectory()) continue
+        // A root names its full path — the breadcrumb root convention.
+        roots.push({ name: root, path: root, hidden: false })
+      } catch {
+        // An absent or inaccessible drive: omit the row.
+        signal?.throwIfAborted()
+      }
+    }
+    return roots
   }
 
   private async list(path?: string, signal?: AbortSignal): Promise<DirectoryListing> {

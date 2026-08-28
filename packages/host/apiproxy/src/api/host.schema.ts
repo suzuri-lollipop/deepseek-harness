@@ -36,6 +36,14 @@ export const directoryEntrySchema = z.object({
   hidden: z.boolean(),
 }) satisfies z.ZodType<Wire<DirectoryEntry>>
 
+/** host.listRoots request payload (empty object literal). */
+export const hostListRootsRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'host.listRoots'>>>
+
+/** host.listRoots response value: the present filesystem roots. */
+export const hostListRootsValueSchema = z.object({
+  roots: z.array(directoryEntrySchema),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.listRoots'>>>
+
 /** host.listDirectory request payload; an absent path lists the home directory. */
 export const hostListDirectoryRequestSchema = z.object({
   path: z.string().optional(),

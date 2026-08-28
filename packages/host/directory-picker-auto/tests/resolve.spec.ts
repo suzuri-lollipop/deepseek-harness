@@ -9,6 +9,7 @@ import type { DirectoryPickerHostFacts } from '../src/resolve.ts'
 /** Baseline facts that resolve to `native`; each case overrides one signal (darwin never consults `linuxChooser`). */
 const attended: DirectoryPickerHostFacts = {
   bindHost: '127.0.0.1',
+  trustedHosts: [],
   platform: 'darwin',
   env: {},
   linuxChooser: false,
@@ -27,6 +28,11 @@ describe('resolveDirectoryPickerBackend', () => {
   it('resolves browse under an SSH launch (either env marker)', () => {
     expect(resolveDirectoryPickerBackend({ ...attended, env: { SSH_CONNECTION: '10.0.0.2 55 10.0.0.9 22' } })).toBe('browse')
     expect(resolveDirectoryPickerBackend({ ...attended, env: { SSH_TTY: '/dev/pts/3' } })).toBe('browse')
+  })
+
+  it('resolves browse when the launch names an explicit trusted-host authority', () => {
+    expect(resolveDirectoryPickerBackend({ ...attended, trustedHosts: ['server-4.tail82719.ts.net'] })).toBe('browse')
+    expect(resolveDirectoryPickerBackend({ ...attended, trustedHosts: ['server-4.tail82719.ts.net', 'lab.internal'] })).toBe('browse')
   })
 
   it('requires a display session and a chooser binary on linux', () => {

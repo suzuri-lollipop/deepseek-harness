@@ -150,6 +150,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async pickDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }
       },
+      async listRoots(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { roots: [{ name: '/', path: '/', hidden: false }] } } }
+      },
       async listDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false } } }
       },

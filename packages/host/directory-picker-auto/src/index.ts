@@ -1,8 +1,9 @@
 /**
  * Adaptive chooser of the directory-picker seam: resolves the host's
- * situation once at boot (bind host, SSH launch, display session, Linux
- * chooser binary) and mounts the matching interaction — `native` or `browse`
- * — as real Loader entries in the in-memory root tree. Each interaction is a
+ * situation once at boot (bind host, SSH launch, `--trusted-host`
+ * authorities, display session, Linux chooser binary) and mounts the matching
+ * interaction — `native` or `browse` — as real Loader entries in the
+ * in-memory root tree. Each interaction is a
  * pair: the Host backend serving the seam capability and the client surface
  * occupying ui-workspace's directory-flow holes. Both arrive as ordinary
  * entries, so the surface is discovered exactly as a config-row's would be
@@ -12,6 +13,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 // Empty type imports carry the `loader` and `webServer` Context merges for the reads below.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -27,6 +29,20 @@ export { resolveDirectoryPickerBackend } from './resolve.ts'
 export const name = 'directory-picker-auto'
 /** Required services: the effective bind host (`webServer`) and the entry tree the backend mounts into (`loader`). */
 export const inject = ['webServer', 'loader']
+
+/** Plugin config: the remote-browser authorities the composing deployment names. */
+export interface Config {
+  /**
+   * Explicit `--trusted-host` authorities this invocation admits to the /api
+   * trust fence; a non-empty list resolves `browse`. The web-app bundle patch
+   * sources this from the `webStartup` service.
+   */
+  trustedHosts: string[]
+}
+
+export const Config: z<Config> = z.object({
+  trustedHosts: z.array(String).default([]),
+})
 
 /**
  * Host backend package per resolved kind — fixed composition vocabulary, not a
@@ -58,10 +74,12 @@ export const SURFACE_PACKAGES: Record<DirectoryPickerBackendKind, string> = {
  * joins their fibers' teardown, so unloading this plugin returns only after
  * both faces of the mounted interaction (and their dependents) quiesced.
  * @param ctx - cordis context carrying the injected `webServer` and `loader`.
+ * @param config - validated {@link Config}.
  */
-export async function apply(ctx: Context): Promise<void> {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const backend = resolveDirectoryPickerBackend({
     bindHost: ctx.webServer.host,
+    trustedHosts: config.trustedHosts,
     platform: process.platform,
     env: process.env,
     linuxChooser: hasLinuxChooserBinary(process.env.PATH, canExecute),
